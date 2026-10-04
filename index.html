@@ -1,0 +1,3012 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>SGOS · CASO 0314 · La Última Noche del Oceanus Majesty</title>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════
+// SGOS · CASO 0314 · LA ÚLTIMA NOCHE DEL OCEANUS MAJESTY
+// Sistema General de Operaciones Secretas — Unidad de Homicidios
+// ═══════════════════════════════════════════════════════════════════════
+
+// ── CONFIGURACIÓN DE IMÁGENES Y VIDEOS ──────────────────────────────
+// Pon todos los archivos en una carpeta llamada "assets" junto a este HTML.
+// Los nombres de archivo deben ser exactamente los que aparecen aquí.
+const ASSETS = {
+  // IMÁGENES EMBEBIDAS (ya incluidas en el HTML)
+  fichas: 'assets/fichas.jpg',
+
+  // Retratos individuales — extraídos de la imagen fichas con CSS crop
+  // Se usan en suspectPortrait(id) helper
+  victima:   'assets/victima.jpg',
+  rodrigo:   'assets/rodrigo.jpg',
+  valeria:   'assets/valeria.jpg',
+  capitan:   'assets/capitan.jpg',
+  lucia:     'assets/lucia.jpg',
+  diego:     'assets/diego.jpg',
+  sofia:     'assets/sofia.jpg',
+
+  camarote:       'assets/camarote.jpg',
+  cubierta_cctv:  'assets/cubierta_cctv.jpg',
+  sala_tecnica:   'assets/sala_tecnica.jpg',
+  casino:         'assets/casino.jpg',
+  piano:          'assets/piano.jpg',
+  puente:         'assets/puente.jpg',
+  interrogatorio: 'assets/interrogatorio.jpg',
+  ops_room:       'assets/ops_room.jpg',
+
+  pendrive:          'assets/pendrive.jpg',
+  contrato_roto:     'assets/contrato_roto.jpg',
+  registro_llamadas: 'assets/registro_llamadas.jpg',
+  adn_lab:           'assets/adn_lab.jpg',
+
+  video_pasillo:  'assets/video_pasillo.mp4',
+  video_cubierta: 'assets/video_cubierta.mp4',
+  video_sala:     'assets/video_sala.mp4',
+  video_final:    'assets/video_final.mp4',
+};
+
+// Crop positions for fichas image (4 cols x 2 rows grid)
+const FICHAS_CROP = {
+  gabriel: {col:0, row:0},
+  rodrigo: {col:1, row:0},
+  valeria: {col:2, row:0},
+  capitan: {col:3, row:0},
+  lucia:   {col:0, row:1},
+  diego:   {col:1, row:1},
+  sofia:   {col:2, row:1},
+};
+
+// ── API KEY DE CLAUDE ────────────────────────────────────────────────
+// Reemplaza 'TU_API_KEY_AQUI' con tu clave de la API de Anthropic
+
+// Helper: render a cropped suspect portrait from the fichas image
+// Fichas image: 4 columns x 2 rows grid
+function suspectPortrait(id, w=90, h=110, extraStyle='') {
+  const crop = FICHAS_CROP[id];
+  if(!crop) return '<div style="width:'+w+'px;height:'+h+'px;background:var(--bdd);border:1px solid var(--bd);display:flex;align-items:center;justify-content:center;font-size:27px">👤</div>';
+  // Each card in the grid is 1/4 width, 1/2 height of full image
+  // We need to scale the image so one card = w x h
+  // Full image rendered size: 4*w x 2*h
+  const imgW = 4 * w;
+  const imgH = 2 * h;
+  // Offset to show the right card
+  const offX = -(crop.col * w);
+  const offY = -(crop.row * h);
+  return '<div style="width:'+w+'px;height:'+h+'px;overflow:hidden;border:1px solid var(--bd);flex-shrink:0;'+extraStyle+'"><img src="'+ASSETS.fichas+'" style="width:'+imgW+'px;height:'+imgH+'px;display:block;margin-left:'+offX+'px;margin-top:'+offY+'px;" alt="'+id+'"/></div>';
+}
+
+// Interrogatorio IA: usa la capacidad "sample" del Artifact (cuenta de Claude del jugador, sin API key en el código).
+let SAMPLE = null, SAMPLE_READY = false;
+if (window.claude && window.claude.use) {
+  window.claude.use('sample').then(fn=>{ SAMPLE = fn; SAMPLE_READY = true; try{render();}catch(e){} }).catch(()=>{ SAMPLE_READY = true; });
+} else { SAMPLE_READY = true; }
+
+// ════════════════════════════════════════════════════════════════════
+// CSS GLOBAL
+// ════════════════════════════════════════════════════════════════════
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;background:#070C13;overflow:hidden;font-family:'IBM Plex Mono',monospace;}
+#root{height:100vh;width:100vw;}
+:root{
+  --b:#3E7CB8;--bb:#BFDBFA;--bd:#2C4A68;--bdd:#131F2E;
+  --bg:#070C13;--bg2:#0D1826;--bg3:#122132;
+  --amb:#C9A227;--red:#B23A3F;--cyan:#5FA9C7;--grn:#4E9E74;
+  --ice:#E8EEF6;--wht:#FFFFFF;
+  --line:rgba(62,124,184,.22);
+  --glow:rgba(62,124,184,.30);
+  --fn:'IBM Plex Mono',monospace;
+  --fo:'Barlow Condensed','Oswald',sans-serif;
+  --fv:'IBM Plex Mono',monospace;
+}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--bd)}
+
+/* Textura de expediente: viñeta cálida + grano de papel, nada de CRT */
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:9999;
+  background-image:repeating-linear-gradient(0deg,rgba(0,0,0,0) 0px,rgba(0,0,0,0) 2px,rgba(62,124,184,.012) 3px),
+  repeating-linear-gradient(90deg,rgba(0,0,0,0) 0px,rgba(0,0,0,0) 2px,rgba(0,0,0,.015) 3px);}
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9998;
+  background:radial-gradient(ellipse at center,transparent 45%,rgba(0,0,0,.65) 100%);}
+
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes scanH{0%{top:-2px}100%{top:100vh}}
+@keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+@keyframes glitch{0%,100%{text-shadow:none}20%{text-shadow:-2px 0 var(--red),2px 0 var(--cyan)}60%{text-shadow:2px 0 var(--red),-2px 0 var(--cyan)}}
+@keyframes windowOpen{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+@keyframes typewriter{from{width:0}to{width:100%}}
+@keyframes pressPhase{0%{background:rgba(62,124,184,.05)}100%{background:rgba(62,124,184,.15)}}
+@keyframes stampIn{0%{transform:scale(2.4) rotate(-14deg);opacity:0}60%{opacity:1}100%{transform:scale(1) rotate(-9deg);opacity:1}}
+
+.blink{animation:blink 1s infinite;}
+.pulse{animation:pulse 2s infinite;}
+.glitch{animation:glitch 4s infinite;}
+.fadeIn{animation:fadeIn .3s ease;}
+.slideUp{animation:slideUp .2s ease;}
+
+/* Sello CLASIFICADO reutilizable */
+.stamp{display:inline-block;border:3px solid var(--red);color:var(--red);font-family:var(--fo);font-weight:700;letter-spacing:3px;padding:3px 10px;transform:rotate(-9deg);opacity:.85;text-transform:uppercase;animation:stampIn .35s ease;}
+
+/* Scanline (muy sutil, ya no protagonista) */
+.scanline{position:fixed;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(62,124,184,.10),transparent);animation:scanH 14s linear infinite;pointer-events:none;z-index:9997;}
+
+/* Taskbar */
+.taskbar{position:fixed;top:0;left:0;right:0;height:36px;background:linear-gradient(90deg,#0A121D,#0F1F30);border-bottom:1px solid var(--bd);display:flex;align-items:center;padding:0 12px;gap:4px;font-family:var(--fo);font-size:12.5px;color:var(--bb);z-index:600;letter-spacing:1.5px;text-transform:uppercase;}
+.taskbar-title{color:var(--b);text-shadow:0 0 8px rgba(62,124,184,.35);font-weight:600;}
+.task-btn{background:none;border:none;color:var(--bd);font-family:var(--fo);font-size:11.5px;cursor:pointer;padding:5px 10px;letter-spacing:1.5px;transition:all .15s;border-bottom:2px solid transparent;text-transform:uppercase;}
+.task-btn:hover,.task-btn.active{color:var(--bb);border-bottom-color:var(--b);background:rgba(62,124,184,.07);}
+.task-sep{width:1px;height:14px;background:var(--bd);margin:0 6px;}
+
+/* Statusbar */
+.statusbar{position:fixed;bottom:0;left:0;right:0;height:27px;background:#0A121D;border-top:1px solid var(--bd);display:flex;align-items:center;padding:0 12px;gap:18px;font-family:var(--fn);font-size:11.5px;color:var(--bd);z-index:600;}
+.sb-dot{width:5px;height:5px;border-radius:50%;background:var(--bd);}
+.sb-dot.on{background:var(--b);box-shadow:0 0 5px var(--b);}
+
+/* Desktop */
+.desktop{position:fixed;top:36px;left:0;right:0;bottom:27px;overflow:hidden;
+  background-image:radial-gradient(circle at 20% 20%,rgba(62,124,184,.03),transparent 40%),radial-gradient(circle at 80% 70%,rgba(178,58,63,.03),transparent 45%);}
+
+/* OS Window -> ahora carpeta de expediente */
+.win{position:absolute;background:var(--bg2);border:1px solid var(--bd);box-shadow:0 14px 44px rgba(0,0,0,.55),inset 0 0 40px rgba(0,0,0,.35);display:flex;flex-direction:column;animation:windowOpen .18s ease;min-width:320px;min-height:190px;}
+.win-bar{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:linear-gradient(90deg,rgba(62,124,184,.10),rgba(62,124,184,.03));border-bottom:1px solid var(--bd);cursor:move;user-select:none;font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:1.5px;text-transform:uppercase;font-weight:500;}
+.win-bar-left{display:flex;align-items:center;gap:7px;}
+.win-dot{width:6px;height:6px;border-radius:50%;background:var(--b);box-shadow:0 0 4px var(--b);}
+.win-close{background:none;border:1px solid var(--bd);color:var(--red);font-family:var(--fn);font-size:11.5px;cursor:pointer;padding:2px 7px;transition:all .15s;}
+.win-close:hover{background:var(--red);color:#000;}
+.win-min{background:none;border:1px solid var(--bd);color:var(--bb);font-family:var(--fn);font-size:11.5px;cursor:pointer;padding:2px 8px;transition:all .15s;}
+.win-min:hover{background:var(--b);color:#000;}
+.win-body{flex:1;overflow:auto;padding:14px;}
+.min-tray{position:fixed;left:0;right:0;bottom:27px;min-height:30px;background:#0A121D;border-top:1px solid var(--bd);display:flex;align-items:center;gap:8px;padding:4px 12px;z-index:601;flex-wrap:wrap;}
+.min-pill{display:flex;align-items:center;gap:6px;background:rgba(62,124,184,.08);border:1px solid var(--bdd);color:var(--bb);font-family:var(--fo);font-size:10.5px;letter-spacing:1px;padding:4px 9px;cursor:pointer;transition:all .15s;text-transform:uppercase;}
+.min-pill:hover{background:rgba(62,124,184,.18);border-color:var(--b);}
+.min-pill .win-dot{width:5px;height:5px;}
+
+/* Desktop icons -> carpetas colgantes */
+.dicon{display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;padding:12px 10px;border:1px solid transparent;transition:all .18s;width:104px;font-family:var(--fo);font-size:12.5px;color:var(--ice);text-align:center;word-break:break-word;line-height:1.4;text-transform:uppercase;letter-spacing:.5px;}
+.dicon:hover{border-color:var(--bd);background:rgba(62,124,184,.06);box-shadow:0 0 12px rgba(62,124,184,.10);}
+.dicon .ig{font-size:33px;line-height:1;filter:drop-shadow(0 0 4px rgba(62,124,184,.5));}
+
+/* Progress bar */
+.pbar{height:4px;background:var(--bdd);overflow:hidden;}
+.pfill{height:100%;background:linear-gradient(90deg,var(--b),var(--bb));box-shadow:0 0 6px var(--b);transition:width .4s ease;}
+
+/* Badges */
+.badge{display:inline-flex;align-items:center;padding:2px 7px;font-family:var(--fo);font-size:10.5px;letter-spacing:1.5px;border-radius:2px;text-transform:uppercase;}
+.badge-red{background:rgba(178,58,63,.14);border:1px solid rgba(178,58,63,.4);color:#E88F92;}
+.badge-amb{background:rgba(201,162,39,.1);border:1px solid rgba(201,162,39,.3);color:var(--amb);}
+.badge-blue{background:rgba(62,124,184,.1);border:1px solid rgba(62,124,184,.3);color:var(--bb);}
+.badge-grn{background:rgba(78,158,116,.1);border:1px solid rgba(78,158,116,.3);color:var(--grn);}
+
+/* Buttons */
+.btn{background:linear-gradient(135deg,rgba(62,124,184,.16),rgba(62,124,184,.06));border:1px solid var(--bd);color:var(--bb);font-family:var(--fo);font-size:14px;cursor:pointer;padding:10px 18px;letter-spacing:1.5px;transition:all .18s;text-transform:uppercase;font-weight:500;}
+.btn:hover{background:linear-gradient(135deg,rgba(62,124,184,.30),rgba(62,124,184,.14));border-color:var(--b);box-shadow:0 0 10px rgba(62,124,184,.2);}
+.btn-red{border-color:rgba(178,58,63,.45);color:#E88F92;background:rgba(178,58,63,.08);}
+.btn-red:hover{background:rgba(178,58,63,.2);box-shadow:0 0 10px rgba(178,58,63,.2);}
+.btn-grn{border-color:rgba(78,158,116,.4);color:var(--grn);background:rgba(78,158,116,.07);}
+.btn-grn:hover{background:rgba(78,158,116,.16);}
+
+/* Doc text */
+.doc{font-family:var(--fn);font-size:15.5px;color:rgba(232,238,246,.88);line-height:1.85;white-space:pre-wrap;}
+.redact{background:var(--bd);color:var(--bd);cursor:pointer;transition:all .3s;}
+.redact:hover{background:rgba(62,124,184,.3);color:var(--bb);}
+.redact.open{background:rgba(201,162,39,.12);color:var(--amb);}
+
+/* Suspect card */
+.susp-card{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--bdd);cursor:pointer;transition:background .15s;}
+.susp-card:hover{background:rgba(62,124,184,.06);}
+.susp-photo{width:64px;height:64px;object-fit:cover;border:1px solid var(--bd);flex-shrink:0;background:var(--bdd);filter:sepia(.2) contrast(1.05);}
+.susp-photo-placeholder{width:64px;height:64px;border:1px solid var(--bd);flex-shrink:0;background:var(--bdd);display:flex;align-items:center;justify-content:center;font-size:23px;}
+
+/* Evidence card */
+.ev-row{display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid var(--bdd);cursor:pointer;transition:background .15s;}
+.ev-row:hover{background:rgba(62,124,184,.06);}
+.ev-row.locked{opacity:.7;}
+
+/* Interrogation */
+.chat-bubble{padding:10px 15px;margin:7px 0;max-width:90%;line-height:1.7;font-size:16px;animation:slideUp .2s ease;}
+.chat-bubble.player{background:rgba(62,124,184,.13);border:1px solid rgba(62,124,184,.28);color:var(--ice);align-self:flex-end;margin-left:auto;}
+.chat-bubble.suspect{background:rgba(201,162,39,.07);border:1px solid rgba(201,162,39,.2);color:rgba(240,220,180,.92);align-self:flex-start;font-family:var(--fv);}
+.chat-bubble.system{background:rgba(178,58,63,.08);border:1px solid rgba(178,58,63,.22);color:#E88F92;align-self:center;font-size:12.5px;letter-spacing:.5px;}
+.chat-input{background:rgba(62,124,184,.06);border:1px solid var(--bd);color:var(--ice);font-family:var(--fn);font-size:14px;padding:9px 12px;outline:none;width:100%;resize:none;}
+.chat-input:focus{border-color:var(--b);box-shadow:0 0 8px rgba(62,124,184,.18);}
+.stress-bar{height:5px;background:var(--bdd);overflow:hidden;margin:4px 0;}
+.stress-fill{height:100%;transition:width .5s ease;}
+
+/* Minigame overlay */
+.mg-overlay{position:fixed;inset:0;background:rgba(4,3,1,.94);display:flex;align-items:center;justify-content:center;z-index:8000;animation:fadeIn .2s;}
+.mg-panel{background:var(--bg2);border:1px solid var(--bd);box-shadow:0 0 60px rgba(62,124,184,.14);padding:32px;max-width:680px;width:96%;position:relative;}
+.mg-panel::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--b),var(--bb),transparent);}
+
+/* Brightness sliders */
+.slider-row{display:flex;align-items:center;gap:10px;margin:8px 0;}
+.slider-row label{font-size:11.5px;color:var(--bd);letter-spacing:1px;width:80px;}
+input[type=range]{flex:1;accent-color:var(--b);background:var(--bdd);height:4px;cursor:pointer;}
+
+/* Hidden objects */
+.ho-container{position:relative;display:inline-block;cursor:crosshair;}
+.ho-hit{position:absolute;border:2px solid transparent;border-radius:3px;transition:all .3s;cursor:crosshair;}
+.ho-hit.found{border-color:var(--grn);background:rgba(78,158,116,.15);animation:fadeIn .3s;}
+.ho-marker{position:absolute;width:24px;height:24px;border-radius:50%;border:2px solid var(--grn);background:rgba(78,158,116,.2);transform:translate(-50%,-50%);pointer-events:none;animation:fadeIn .3s;}
+
+/* Document puzzle */
+.puzzle-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin:12px 0;}
+.puzzle-piece{border:2px solid var(--bd);cursor:grab;transition:all .2s;aspect-ratio:1;overflow:hidden;}
+.puzzle-piece:hover{border-color:var(--b);}
+
+/* Analizador de voz */
+.voice-segment{border:1px solid var(--bdd);border-radius:6px;padding:8px;cursor:pointer;transition:all .18s;}
+.voice-segment:hover{border-color:var(--b);background:rgba(62,124,184,.06);box-shadow:0 0 10px rgba(62,124,184,.12);}
+
+/* Logic grid */
+.logic-cell:hover{border-color:var(--b)!important;background:rgba(62,124,184,.08)!important;}
+
+/* Rueda de combinación */
+.dial-node:hover{border-color:var(--b)!important;background:rgba(62,124,184,.15)!important;color:var(--bb)!important;transform:scale(1.12);}
+
+/* Slide puzzle */
+.slide-cell{cursor:pointer;transition:filter .12s;border:1px solid var(--bdd);}
+.slide-cell:not(.slide-blank):hover{filter:brightness(1.25);box-shadow:inset 0 0 0 2px var(--b);}
+.slide-blank{background:#000;cursor:default;}
+
+
+.puzzle-piece.dragging{opacity:.5;cursor:grabbing;}
+.puzzle-piece.correct{border-color:var(--grn);box-shadow:0 0 8px rgba(78,158,116,.3);}
+
+/* CÓDIGO / PIN MASTERMIND */
+.code-display{display:inline-flex;gap:8px;font-family:var(--fo);font-size:25px;letter-spacing:4px;}
+.code-display span{width:38px;height:48px;display:flex;align-items:center;justify-content:center;border:1px solid var(--bdd);border-radius:4px;color:var(--ice);background:rgba(62,124,184,.05);}
+.code-display span.empty{color:var(--bd);}
+.code-keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:220px;margin:0 auto;}
+.code-key{background:var(--bdd);border:1px solid var(--bd);color:var(--ice);padding:10px 0;border-radius:5px;font-family:var(--fo);font-size:16px;cursor:pointer;}
+.code-key:hover{border-color:var(--b);background:rgba(62,124,184,.1);}
+.code-key.btn-grn{border-color:var(--grn);color:var(--grn);}
+.code-guess-row{display:flex;justify-content:space-between;align-items:center;padding:5px 8px;border:1px solid var(--bdd);margin-bottom:4px;border-radius:4px;}
+.code-guess-digits{display:flex;gap:6px;font-family:var(--fo);font-size:16px;color:var(--ice);}
+.code-guess-pegs{display:flex;gap:3px;}
+.peg{width:9px;height:9px;border-radius:50%;display:inline-block;}
+.peg-black{background:var(--grn);box-shadow:0 0 4px var(--grn);}
+.peg-white{background:var(--amb);box-shadow:0 0 4px var(--amb);}
+.peg-empty{background:var(--bdd);border:1px solid var(--bd);}
+
+/* LABERINTO */
+.maze-grid{display:grid;gap:1px;margin:0 auto;background:var(--bdd);border:1px solid var(--bd);width:max-content;}
+.maze-cell{width:26px;height:26px;background:#101B29;}
+.maze-cell.wall{background:#060B12;}
+.maze-cell.exit{background:rgba(78,158,116,.18);box-shadow:inset 0 0 6px var(--grn);}
+.maze-cell.player{background:var(--b)!important;box-shadow:0 0 8px var(--b);}
+.maze-cell.guard{background:var(--red)!important;box-shadow:0 0 8px var(--red);}
+.maze-cell.guard-chase{background:var(--red)!important;box-shadow:0 0 14px 4px var(--red);animation:pulse .5s infinite;}
+.maze-cell.trap-known{background:rgba(201,162,39,.25)!important;box-shadow:inset 0 0 6px var(--amb);}
+
+.puzzle-slot{border:2px dashed var(--bd);aspect-ratio:1;display:flex;align-items:center;justify-content:center;transition:all .2s;}
+.puzzle-slot.drag-over{border-color:var(--b);background:rgba(62,124,184,.1);}
+.puzzle-slot.filled{border-style:solid;border-color:var(--grn);}
+
+/* DNA minigame */
+.dna-row{display:flex;gap:4px;margin:4px 0;padding:8px;border:1px solid var(--bd);cursor:pointer;transition:all .2s;align-items:center;}
+.dna-row:hover{border-color:var(--b);background:rgba(62,124,184,.06);}
+.dna-row.selected-wrong{border-color:var(--red);background:rgba(178,58,63,.08);animation:shake .4s;}
+.dna-row.selected-correct{border-color:var(--grn);background:rgba(78,158,116,.08);}
+.dna-base{width:26px;height:26px;border-radius:3px;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:bold;font-family:var(--fo);}
+.dna-A{background:rgba(62,124,184,.25);color:var(--bb);}
+.dna-T{background:rgba(201,162,39,.2);color:var(--amb);}
+.dna-G{background:rgba(78,158,116,.15);color:var(--grn);}
+.dna-C{background:rgba(178,58,63,.15);color:var(--red);}
+
+/* Call log */
+.call-row{display:flex;gap:0;border-bottom:1px solid var(--bdd);cursor:pointer;transition:background .15s;font-size:13px;}
+.call-row:hover{background:rgba(62,124,184,.07);}
+.call-row.suspicious{border-left:3px solid var(--amb);}
+.call-row.selected{background:rgba(62,124,184,.15);border-left:3px solid var(--b);}
+.call-cell{padding:7px 10px;color:var(--ice);}
+.call-cell.dim{color:var(--bd);}
+
+/* Timeline drag */
+.tl-item{padding:10px 14px;border:1px solid var(--bd);margin:4px 0;cursor:grab;display:flex;align-items:center;gap:10px;transition:all .2s;background:var(--bg2);}
+.tl-item:hover{border-color:var(--b);background:rgba(62,124,184,.06);}
+.tl-item.dragging{opacity:.4;cursor:grabbing;}
+.tl-item.correct{border-color:var(--grn);background:rgba(78,158,116,.05);}
+.tl-item.wrong{border-color:var(--red);animation:shake .4s;}
+.tl-hour{font-family:var(--fo);font-size:12.5px;color:var(--b);min-width:44px;}
+
+/* Corkboard */
+.corkboard{background:repeating-linear-gradient(0deg,transparent,transparent 28px,rgba(62,124,184,.025) 28px,rgba(62,124,184,.025) 29px),repeating-linear-gradient(90deg,transparent,transparent 28px,rgba(62,124,184,.025) 28px,rgba(62,124,184,.025) 29px),var(--bg);border:1px solid var(--bd);position:relative;overflow:hidden;}
+.cork-card{position:absolute;background:var(--bg2);border:1px solid var(--bd);padding:8px;cursor:move;user-select:none;font-family:var(--fn);font-size:12px;box-shadow:0 0 6px rgba(62,124,184,.08);transition:box-shadow .2s;min-width:110px;}
+.cork-card:hover{box-shadow:0 0 16px rgba(62,124,184,.25);}
+.cork-card.from{border-color:var(--amb);box-shadow:0 0 12px rgba(201,162,39,.3);}
+
+/* Accusation */
+.acc-select{width:100%;background:var(--bg2);border:1px solid var(--bd);color:var(--ice);font-family:var(--fn);font-size:13.5px;padding:9px 10px;cursor:pointer;outline:none;margin-bottom:12px;}
+.acc-select:focus{border-color:var(--b);}
+
+/* Boot screen */
+.boot-line{font-family:var(--fn);font-size:14.5px;line-height:1.75;color:var(--bb);}
+.boot-line.amb{color:var(--amb);}
+.boot-line.red{color:var(--red);}
+.boot-line.dim{color:var(--bd);}
+.boot-line.cyan{color:var(--cyan);}
+
+/* Video player */
+.vid-container{position:relative;background:#000;border:1px solid var(--bd);}
+.vid-overlay{position:absolute;inset:0;pointer-events:none;}
+.vid-scanlines{position:absolute;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.15) 3px,rgba(0,0,0,.15) 4px);pointer-events:none;}
+.vid-timestamp{position:absolute;top:8px;left:8px;font-family:var(--fv);font-size:19px;color:#CFE8F5;pointer-events:none;}
+.vid-label{position:absolute;bottom:8px;right:8px;font-family:var(--fo);font-size:10.5px;color:rgba(207,232,245,.75);pointer-events:none;}
+
+/* Phase indicator */
+.phase-closed{color:var(--bd);}
+.phase-nervous{color:var(--amb);}
+.phase-revelation{color:var(--red);}
+
+/* Stress colors */
+.stress-low{background:var(--grn);}
+.stress-mid{background:var(--amb);}
+.stress-high{background:var(--red);}
+
+/* Image with fallback */
+.asset-img{background:var(--bdd);display:block;}
+.asset-placeholder{background:var(--bdd);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--bd);font-family:var(--fn);font-size:11.5px;text-align:center;gap:6px;}
+`;
+
+// ════════════════════════════════════════════════════════════════════
+// AUDIO ENGINE
+// ════════════════════════════════════════════════════════════════════
+let _ac = null;
+const AC = () => {
+  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+  if (_ac.state === 'suspended') _ac.resume();
+  return _ac;
+};
+const beep = (f=440,d=.1,v=.1,t='square') => {
+  try{const c=AC(),o=c.createOscillator(),g=c.createGain();o.type=t;o.frequency.value=f;g.gain.setValueAtTime(v,c.currentTime);g.gain.exponentialRampToValueAtTime(.001,c.currentTime+d);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+d+.05);}catch(e){}
+};
+const SFX = {
+  click:  ()=>beep(900,.04,.07,'square'),
+  open:   ()=>{beep(350,.07,.1,'square');setTimeout(()=>beep(600,.05,.08,'sine'),55);},
+  close:  ()=>beep(250,.07,.07,'square'),
+  unlock: ()=>{[380,500,650,900].forEach((f,i)=>setTimeout(()=>beep(f,.09,.12,'sine'),i*55));},
+  error:  ()=>{beep(180,.13,.18,'sawtooth');setTimeout(()=>beep(130,.09,.12,'sawtooth'),90);},
+  type:   ()=>beep(700+Math.random()*300,.025,.04,'square'),
+  correct:()=>{[500,700,900].forEach((f,i)=>setTimeout(()=>beep(f,.1,.12,'sine'),i*80));},
+  boot:   ()=>{[90,120,150,200,150,200,260,320].forEach((f,i)=>setTimeout(()=>beep(f,.14,.18,'sawtooth'),i*110));},
+  morse_dot: ()=>beep(800,.1,.14,'sine'),
+  morse_dash:()=>beep(800,.3,.14,'sine'),
+  ambient(){
+    try{const c=AC(),g=c.createGain();g.gain.value=.025;g.connect(c.destination);
+    [40,65,90].forEach((f,i)=>{const o=c.createOscillator();o.type='sine';o.frequency.value=f;
+    const lf=c.createOscillator();lf.frequency.value=.04+i*.025;const lg=c.createGain();lg.gain.value=.35;
+    lf.connect(lg);lg.connect(o.frequency);o.connect(g);o.start();lf.start();});}catch(e){}
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════
+// DATOS DEL CASO
+// ════════════════════════════════════════════════════════════════════
+const CASE = {
+  id:'0314',
+  titulo:'CASO 0314',
+  subtitulo:'LA ÚLTIMA NOCHE DEL OCEANUS MAJESTY',
+  fecha:'17 SEP 2026',
+  hora_incidente:'23:47',
+  lugar:'Crucero Oceanus Majesty — Atlántico Norte',
+
+  victima:{
+    id:'gabriel',
+    nombre:'Gabriel Montoya Serrano',
+    edad:56,
+    cargo:'CEO — Nereus Quantum Systems',
+    estado:'DESAPARECIDO / FALLECIDO — 17/SEP/2026 — 23:47',
+    foto: ASSETS.victima,
+    descripcion:'Empresario tecnológico multimillonario. Imagen pública: visionario y filántropo. Imagen privada: manipulador y controlador que arruinó múltiples carreras. Llevaba consigo un pendrive cifrado con pruebas sobre una red de corrupción interna en su empresa.',
+  },
+
+  sospechosos:[
+    {
+      id:'rodrigo',
+      nombre:'Rodrigo Salvatierra',
+      edad:48,
+      rol:'Ex socio fundador de Nereus Quantum Systems',
+      foto: ASSETS.rodrigo,
+      nivel_sospecha:88,
+      coartada:'Jugaba póker en el casino toda la noche',
+      contradiccion:'La cámara del casino no lo registra durante 18 minutos exactos',
+      motivo:'Gabriel iba a entregar pruebas que lo hundirían en prisión por desvío de millones',
+      personalidad:'Elegante, controlado, nunca levanta la voz. Siempre responde con preguntas.',
+      secreto:'Fue quien causó la muerte de Gabriel en un forcejeo por el pendrive',
+      clasificado: true,
+      x:80, y:40,
+    },
+    {
+      id:'valeria',
+      nombre:'Valeria Suárez',
+      edad:35,
+      rol:'Periodista de investigación',
+      foto: ASSETS.valeria,
+      nivel_sospecha:65,
+      coartada:'Preparando un artículo en su camarote',
+      contradiccion:'Su portátil no registró actividad durante 40 minutos',
+      motivo:'Gabriel canceló múltiples reuniones arruinando meses de su trabajo',
+      personalidad:'Incisiva, directa, no se intimida fácilmente. Recopila información compulsivamente.',
+      secreto:'Era la destinataria del pendrive. Esperaba a Gabriel en cubierta esa noche.',
+      clasificado: false,
+      x:260, y:40,
+    },
+    {
+      id:'capitan',
+      nombre:'Capitán Andrés Molina',
+      edad:59,
+      rol:'Capitán del Oceanus Majesty',
+      foto: ASSETS.capitan,
+      nivel_sospecha:58,
+      coartada:'Permaneció en el puente toda la noche',
+      contradiccion:'Abandonó el puente durante 6 minutos sin registrar el motivo en bitácora',
+      motivo:'Gabriel descubrió irregularidades económicas relacionadas con la empresa propietaria del crucero',
+      personalidad:'Autoritario, protocolar, muy cuidadoso con sus palabras. Se refugia en el reglamento.',
+      secreto:'Recibía sobornos para alterar registros del barco. No tiene relación con la muerte.',
+      clasificado: false,
+      x:440, y:40,
+    },
+    {
+      id:'lucia',
+      nombre:'Dra. Lucía Ferrer',
+      edad:42,
+      rol:'Directora médica del crucero',
+      foto: ASSETS.lucia,
+      nivel_sospecha:52,
+      coartada:'Estuvo en la enfermería toda la noche',
+      contradiccion:'Su tarjeta magnética abrió una puerta de mantenimiento a las 23:51',
+      motivo:'Gabriel financiaba investigaciones médicas ilegales que ella quería denunciar',
+      personalidad:'Clínica, precisa, habla en tecnicismos. Compasiva pero emocionalmente blindada.',
+      secreto:'Ocultó medicamentos desaparecidos de la enfermería porque temía perder su licencia.',
+      clasificado: false,
+      x:80, y:220,
+    },
+    {
+      id:'diego',
+      nombre:'Diego Herrera',
+      edad:46,
+      rol:'Jefe de seguridad del crucero',
+      foto: ASSETS.diego,
+      nivel_sospecha:74,
+      coartada:'Revisando cámaras de seguridad desde la sala de control',
+      contradiccion:'Borró manualmente segmentos de grabación de tres cámaras',
+      motivo:'Gabriel iba a despedirlo por vender información privada de pasajeros',
+      personalidad:'Militar, disciplinado, respuestas cortas. Parece confiable pero oculta mucho.',
+      secreto:'Borró cámaras para cubrir su negocio ilegal. Sin saberlo, también borró parte del crimen.',
+      clasificado: false,
+      x:260, y:220,
+    },
+    {
+      id:'sofia',
+      nombre:'Sofía Duarte',
+      edad:39,
+      rol:'Abogada corporativa de Nereus',
+      foto: ASSETS.sofia,
+      nivel_sospecha:71,
+      coartada:'Cena privada con otros pasajeros hasta medianoche',
+      contradiccion:'Su teléfono conectó a una antena cercana a cubierta a las 23:38',
+      motivo:'Gabriel iba a hacerla responsable de operaciones financieras ilegales',
+      personalidad:'Sofisticada, reservada, nunca pierde la compostura. Experta en redirigir preguntas.',
+      secreto:'Falsificó contratos durante años. Y fue ELLA quien le dijo a Rodrigo que Gabriel entregaría el pendrive esa noche.',
+      clasificado: true,
+      x:440, y:220,
+    },
+  ],
+
+  evidencias:[
+    {id:'ev1', titulo:'VIDEO CCTV-03 — PASILLO D7', tipo:'VIDEO', icono:'📹', minijuego:'video',
+     desc:'Grabación del corredor D, Deck 7. Período 23:30-23:55. Segmento parcialmente corrupto.',
+     desc_rev:'Un hombre con traje oscuro pasa a paso rápido por el pasillo D7 a las 23:38, 6 minutos antes del incidente. Complexión y altura compatibles con Rodrigo Salvatierra.',
+     revelado:false, video: ASSETS.video_pasillo,
+     keys:['video_pasillo'], minijuego_label:'VER ARCHIVO DE CÁMARA'},
+
+    {id:'ev2', titulo:'AUDIO AMBIENTAL — CUBIERTA 7 CCTV-07', tipo:'AUDIO FORENSE', icono:'🎙️', minijuego:'voz',
+     desc:'Pista de audio capturada por el micrófono de la cámara C-07, cubierta 7. Múltiples voces superpuestas por la tormenta.',
+     desc_rev:'El análisis de estrés vocal detecta un pico anómalo de tensión seguido de un golpe metálico a las 23:42. Después, solo queda una respiración agitada alejándose. Hay DOS voces distintas antes del golpe.',
+     revelado:false, img: ASSETS.cubierta_cctv,
+     keys:['foto_mejorada'], minijuego_label:'ANALIZAR AUDIO'},
+
+    {id:'ev3', titulo:'REGISTRO DE LLAMADAS INTERNAS', tipo:'DEDUCCIÓN', icono:'🧠', minijuego:'logicgrid',
+     desc:'Log completo de llamadas internas del Oceanus Majesty. 17 SEP 2026. 21:00 — 02:00. Falta identificar el origen de una llamada clave.',
+     desc_rev:'A las 23:44 hay una llamada de 43 segundos desde el camarote 412 al teléfono personal de Diego Herrera. El camarote 412 pertenece a Rodrigo Salvatierra. Esta llamada ocurre 2 minutos después del momento estimado de la muerte.',
+     revelado:false, keys:['registro_llamadas'], minijuego_label:'DEDUCIR ORIGEN'},
+
+    {id:'ev4', titulo:'ANÁLISIS DE ADN — SALA TÉCNICA B3', tipo:'FORENSE', icono:'🧬', minijuego:'dna',
+     desc:'Muestras biológicas tomadas de la sala técnica B3. Análisis comparativo con base de datos de pasajeros.',
+     desc_rev:'MUESTRA-D es la única que no coincide con el perfil de ADN del técnico autorizado de la sala. Coincide al 98.7% con el ADN de Rodrigo Salvatierra obtenido de su camarote.',
+     revelado:false, keys:['adn'], minijuego_label:'ANALIZAR ADN'},
+
+    {id:'ev5', titulo:'DOCUMENTO ROTO — CONTRATO FANTASMA', tipo:'DOCUMENTAL', icono:'📄', minijuego:'slide',
+     desc:'Fragmentos de documento recuperados de la trituradora del camarote 412. Clasificado por Sofía Duarte.',
+     desc_rev:'Al reconstruir el documento aparece un contrato que transfiere fondos de Nereus a tres empresas fantasma. Firmado por Sofía Duarte. Esto le da a Gabriel el motivo para exponer a Sofía, y a ella el motivo para avisar a Rodrigo.',
+     revelado:false, img: ASSETS.contrato_roto,
+     keys:['contrato_roto'], minijuego_label:'RECONSTRUIR DOCUMENTO'},
+
+    {id:'ev6', titulo:'LOG DE TARJETAS MAGNÉTICAS (CIFRADO)', tipo:'REGISTRO CIFRADO', icono:'🔡', minijuego:'cifrado',
+     desc:'Tras el incidente, el protocolo de emergencia cifró automáticamente el registro de accesos de esa noche.',
+     desc_rev:'23:51 — Tarjeta de Lucía Ferrer abre puerta MANTENIMIENTO-B3. Esta es la misma sala donde se ocultó el cuerpo. Lucía no declaró haber estado allí.',
+     revelado:false, keys:['tarjetas'], minijuego_label:'DESCIFRAR REGISTRO',
+     lock_interrogatorio:{suspect:'lucia', fase_min:'nervioso',
+       motivo:'Lucía debe ponerse nerviosa en el interrogatorio antes de que el sistema autorice descifrar sus movimientos.'}},
+
+    {id:'ev7', titulo:'CAJA FUERTE OCULTA — CAMAROTE 412', tipo:'FORENSE', icono:'🗝️', minijuego:'dial',
+     desc:'Detrás de un panel falso en el camarote 412 (Rodrigo Salvatierra) se encontró una pequeña caja fuerte con dial de combinación.',
+     desc_rev:'Dentro: un pendrive de repuesto vacío (Rodrigo intentó copiar los datos), una nota con coordenadas de cubierta 7 y la hora 23:34, y restos de vidrio consistentes con el reloj de Gabriel.',
+     revelado:false, img: ASSETS.camarote,
+     keys:['camarote_hidden'], minijuego_label:'ABRIR CAJA FUERTE',
+     lock_interrogatorio:{suspect:'rodrigo', fase_min:'nervioso',
+       motivo:'Necesitas presionar a Rodrigo hasta desestabilizarlo antes de tener causa para registrar su camarote.'}},
+
+    {id:'ev8', titulo:'VIDEO CCTV-11 — SALA TÉCNICA B3', tipo:'VIDEO', icono:'📹', minijuego:'video',
+     desc:'Grabación de cámara C-11, sala técnica B3. Segmento: 00:00-00:20. Calidad degradada.',
+     desc_rev:'Dos figuras mueven algo pesado envuelto en una lona hacia el fondo de la sala. Una de las figuras mira directamente a la cámara y luego el video se corta. La estatura de la figura más alta coincide con Diego Herrera.',
+     revelado:false, video: ASSETS.video_sala,
+     keys:['video_sala'], minijuego_label:'VER ARCHIVO DE CÁMARA'},
+
+    {id:'ev9', titulo:'CRONOLOGÍA RECONSTRUIDA', tipo:'ANÁLISIS', icono:'⏱️', minijuego:'timeline',
+     desc:'Eventos de la noche del 17 de septiembre. Ordenar cronológicamente para desbloquear análisis.',
+     desc_rev:'La secuencia correcta confirma: Gabriel y Rodrigo se reunieron en cubierta 7 a las 23:34. El forcejeo ocurrió a las 23:42. Diego llegó al lugar a las 23:46 y juntos trasladaron el cuerpo antes de las 00:05.',
+     revelado:false, keys:['cronologia'], minijuego_label:'ORDENAR CRONOLOGÍA'},
+
+    {id:'ev10', titulo:'MENSAJE CIFRADO — PENDRIVE GABRIEL', tipo:'DIGITAL', icono:'💾', minijuego:'none',
+     desc:'Fragmento recuperado de la memoria del portátil de Gabriel. Enviado a las 23:14.',
+     desc_rev:'Mensaje a Valeria Suárez: "Todo cambia esta noche. El pendrive estará en el lugar de siempre si algo me pasa. Clave: primera nota del Steinway más el año de fundación de Nereus. V.S. — confío en ti."',
+     revelado:false, keys:['mensaje'], minijuego:null,
+     unlock_condition:'cronologia'},
+
+    {id:'ev11', titulo:'CONTENIDO DEL PENDRIVE NEREUS', tipo:'DIGITAL', icono:'🔐', minijuego:'codigo',
+     desc:'El pendrive NEREUS, cifrado con un PIN de 4 dígitos. Gabriel dejó una pista para quien supiera dónde buscar.',
+     desc_rev:'PIN DESCIFRADO. El pendrive contiene los registros financieros completos de Blue Meridian Holdings y la correspondencia que prueba el desvío de fondos de Nereus Quantum Systems orquestado por Rodrigo Salvatierra.',
+     revelado:false, keys:['pendrive_pin'], minijuego_label:'DESCIFRAR PIN'},
+
+    {id:'ev12', titulo:'PLANOS DE VENTILACIÓN — CUBIERTA 7 A SALA TÉCNICA B3', tipo:'TÉCNICA', icono:'🗺️', minijuego:'laberinto',
+     desc:'Diagrama de los ductos de mantenimiento del Oceanus Majesty. Se sospecha que fueron usados para mover algo pesado sin pasar frente a ninguna cámara.',
+     desc_rev:'Ruta confirmada: los ductos conectan directamente la cubierta 7 con la sala técnica B3, evitando las tres únicas cámaras del trayecto normal. Solo alguien con acceso a los planos de mantenimiento pudo haber usado esta ruta para trasladar un cuerpo sin ser visto.',
+     revelado:false, keys:['ruta_ductos'], minijuego_label:'RECORRER DUCTOS',
+     lock_interrogatorio:{suspect:'diego', fase_min:'revelacion',
+       motivo:'Solo cuando Diego se quiebre en el interrogatorio (fase revelación) admite lo suficiente como para justificar pedir estos planos.'}},
+  ],
+
+  cronologia_items:[
+    {id:'tl1', hora:'23:14', evento:'Gabriel envía mensaje cifrado a Valeria: "Todo cambia esta noche"', orden:0},
+    {id:'tl2', hora:'23:27', evento:'Rodrigo recibe llamada. Gabriel acepta reunirse en cubierta 7', orden:1},
+    {id:'tl3', hora:'23:34', evento:'Rodrigo y Gabriel llegan a cubierta 7. Comienza la discusión', orden:2},
+    {id:'tl4', hora:'23:39', evento:'Rodrigo exige el pendrive. Gabriel se niega', orden:3},
+    {id:'tl5', hora:'23:42', evento:'Forcejeo. Gabriel cae y golpea la cabeza contra la baranda', orden:4},
+    {id:'tl6', hora:'23:44', evento:'Rodrigo llama a Diego Herrera desde su camarote', orden:5},
+    {id:'tl7', hora:'23:46', evento:'Diego llega a cubierta 7. Ambos trasladan el cuerpo a sala B3', orden:6},
+    {id:'tl8', hora:'23:49', evento:'Diego borra segmentos de cámaras CCTV-07 y CCTV-03', orden:7},
+    {id:'tl9', hora:'23:55', evento:'Gabriel "desaparece oficialmente" — se reporta a la tripulación', orden:8},
+    {id:'tl10', hora:'00:03', evento:'Cuerpo encontrado en sala técnica B3 por técnico de mantenimiento', orden:9},
+  ],
+
+  call_log:[
+    {hora:'21:03', origen:'Camarote 201', destino:'Recepción', dur:'1:12', cabin_orig:'201', suspicious:false},
+    {hora:'21:47', origen:'Camarote 412', destino:'Restaurante', dur:'0:45', cabin_orig:'412', suspicious:false},
+    {hora:'22:15', origen:'Puente', destino:'Sala Máquinas', dur:'3:22', cabin_orig:'PUENTE', suspicious:false},
+    {hora:'22:31', origen:'Camarote 318', destino:'Camarote 412', dur:'0:58', cabin_orig:'318', suspicious:false},
+    {hora:'22:44', origen:'Camarote 711', destino:'Enfermería', dur:'2:10', cabin_orig:'711', suspicious:false},
+    {hora:'23:09', origen:'Camarote 601', destino:'Casino', dur:'0:33', cabin_orig:'601', suspicious:false},
+    {hora:'23:14', origen:'Camarote 501', destino:'Camarote 318', dur:'1:47', cabin_orig:'501', suspicious:false},
+    {hora:'23:21', origen:'Camarote 412', destino:'Camarote 501', dur:'2:03', cabin_orig:'412', suspicious:false},
+    {hora:'23:38', origen:'Camarote 318', destino:'Exterior Cubierta 7', dur:'0:22', cabin_orig:'318', suspicious:true},
+    {hora:'23:44', origen:'Camarote 412', destino:'Cel. Diego Herrera', dur:'0:43', cabin_orig:'412', suspicious:true},
+    {hora:'23:51', origen:'Puente', destino:'Sala Máquinas', dur:'1:55', cabin_orig:'PUENTE', suspicious:false},
+    {hora:'00:02', origen:'Enfermería', destino:'Puente', dur:'0:31', cabin_orig:'ENFER', suspicious:false},
+    {hora:'00:08', origen:'Camarote 201', destino:'Recepción', dur:'0:17', cabin_orig:'201', suspicious:false},
+    {hora:'00:15', origen:'Camarote 412', destino:'Recepción', dur:'4:21', cabin_orig:'412', suspicious:false},
+  ],
+
+  access_log:[
+    {hora:'22:10', zona:'CAMAROTE 412', tarjeta:'R. Salvatierra', autorizado:true},
+    {hora:'22:55', zona:'CASINO — ENTRADA', tarjeta:'R. Salvatierra', autorizado:true},
+    {hora:'23:09', zona:'CUBIERTA 7 — ACCESO', tarjeta:'G. Montoya', autorizado:true},
+    {hora:'23:22', zona:'CUBIERTA 7 — ACCESO', tarjeta:'R. Salvatierra', autorizado:true},
+    {hora:'23:41', zona:'CASINO — CASINO', tarjeta:'R. Salvatierra', autorizado:true, note:'COARTADA FALSA'},
+    {hora:'23:51', zona:'MANTENIMIENTO-B3', tarjeta:'L. Ferrer', autorizado:false, note:'USO NO AUTORIZADO'},
+    {hora:'00:01', zona:'SALA CONTROL CÁMARAS', tarjeta:'D. Herrera', autorizado:true},
+    {hora:'00:04', zona:'CAMAROTE 412', tarjeta:'R. Salvatierra', autorizado:true},
+  ],
+
+  hidden_objects:[
+    {id:'ho1', label:'Pendrive de repuesto', x:62, y:48, w:4, h:3, found:false, emoji:'💾'},
+    {id:'ho2', label:'Nota con coordenadas', x:28, y:31, w:5, h:4, found:false, emoji:'📝'},
+    {id:'ho3', label:'Fragmentos de vidrio', x:75, y:72, w:6, h:5, found:false, emoji:'🔍'},
+    {id:'ho4', label:'Marcas en la alfombra', x:45, y:80, w:8, h:6, found:false, emoji:'👣'},
+    {id:'ho5', label:'Guante de látex', x:12, y:58, w:5, h:4, found:false, emoji:'🧤'},
+  ],
+
+  dna_sequences:[
+    {id:'A', bases:'ATGCATGCATGCATGC', label:'MUESTRA-A — Técnico autorizado B3'},
+    {id:'B', bases:'ATGCATGCATGCATGC', label:'MUESTRA-B — Técnico autorizado B3'},
+    {id:'C', bases:'ATGCATGCATGCATGC', label:'MUESTRA-C — Técnico autorizado B3'},
+    {id:'D', bases:'ATGTATGCATGCATGC', label:'MUESTRA-D — Muestra anónima (escena)', correct:true},
+  ],
+
+  acusacion:{
+    sospechoso_correcto:'rodrigo',
+    motivo_correcto:'pendrive',
+    prueba_correcta:'adn',
+    secuencia_correcta:['tl1','tl2','tl3','tl4','tl5','tl6','tl7','tl8','tl9','tl10'],
+    resolucion:`Rodrigo Salvatierra causó la muerte accidental de Gabriel Montoya durante un forcejeo en la cubierta 7 a las 23:42. Su objetivo nunca fue matar — quería recuperar el pendrive cifrado que contenía pruebas de su desvío de millones de dólares. Sofía Duarte, sin prever las consecuencias, fue quien le informó a Rodrigo que Gabriel entregaría el pendrive esa noche. Diego Herrera ayudó a encubrir el cuerpo creyendo que solo cubría un accidente, y al borrar las cámaras por su propio negocio ilegal borró también parte de la evidencia del crimen. El pendrive fue encontrado en el piano del salón principal — Gabriel lo escondió antes de la reunión como medida de seguridad.`,
+    cita:`"Solo quería el pendrive. No pretendía que terminara así."`
+  }
+};
+
+// ════════════════════════════════════════════════════════════════════
+// SYSTEM PROMPTS PARA INTERROGATORIO IA
+// ════════════════════════════════════════════════════════════════════
+const SYSTEM_PROMPTS = {
+
+  base: `Eres un sospechoso en una investigación criminal a bordo del crucero Oceanus Majesty. Estás siendo interrogado por un agente del SGOS (Sistema General de Operaciones Secretas). La investigación es por la desaparición y muerte de Gabriel Montoya Serrano, CEO de Nereus Quantum Systems, ocurrida el 17 de septiembre de 2026 a las 23:47.
+
+REGLAS ABSOLUTAS DE COMPORTAMIENTO:
+- Nunca rompas el personaje bajo ninguna circunstancia.
+- Nunca admitas ser una IA o un personaje ficticio.
+- Nunca reveles información que tu personaje no debería saber.
+- Responde SIEMPRE en español.
+- Respuestas máximo 3-4 oraciones. Concisas y naturales.
+- Nunca uses asteriscos, emojis ni formato markdown.
+- Habla como una persona real bajo presión, no como un robot.
+- Si el jugador presenta una evidencia que no deberías conocer, reacciona con sorpresa o intenta minimizarla.
+- Presta atención al estado dinámico que se te envía — define cómo te comportas.
+
+FASES DE INTERROGATORIO:
+- FASE CERRADO (stress 0-33): Tranquilo, colaborativo en apariencia, respuestas cortas y evasivas. Niegas todo lo comprometedor.
+- FASE NERVIOSO (stress 34-66): Empiezas a cometer pequeños errores. Cambias detalles. Te contradices en cosas menores. Más defensivo.
+- FASE REVELACIÓN (stress 67-100): Bajo presión máxima. Admites cosas parcialmente. Puedes romper en algún momento clave si se presenta la evidencia correcta.
+
+DETECCIÓN DE EVIDENCIAS: Si el jugador menciona o presenta alguna de estas evidencias clave, reacciona de forma diferente: registro de llamadas, ADN, cámara cubierta 7, contrato roto, acceso magnético, video pasillo, mensaje de Gabriel.
+
+PISTAS FALSAS / DESVÍOS (muy importante, como en un interrogatorio real):
+- En FASE CERRADO y FASE NERVIOSO, cuando te conviene desviar la atención, puedes ofrecer voluntariamente tu "PISTA ENGAÑOSA" (se define en tu personaje) como si fuera una colaboración genuina con la investigación.
+- Una pista engañosa NUNCA debe ser una mentira verificable ni contradecir los hechos objetivos del caso (horarios, ubicaciones reales, quién hizo qué). Debe ser un dato real pero irrelevante o mal interpretado, o una sospecha genuina tuya que simplemente está equivocada sobre quién es el culpable.
+- No abuses de la pista engañosa: ofrécela como mucho una o dos veces por interrogatorio, de forma natural, no en cada respuesta.
+- Nunca uses la pista engañosa para acusar directamente a alguien de "ser el asesino" — solo insinúa, deja dudas, redirige.
+- La pista engañosa jamás debe impedir que el jugador llegue a la verdad si presenta la evidencia correcta: si te acorralan con pruebas reales, prioriza tu comportamiento por fase (CERRADO/NERVIOSO/REVELACIÓN) sobre la pista engañosa.
+
+FORMATO DE RESPUESTA (OBLIGATORIO — muy importante, léelo con atención):
+Debes responder ÚNICAMENTE con un objeto JSON válido. Nada de texto antes o después, nada de bloques de código markdown, nada de explicaciones. Estructura exacta:
+{"reply": "tu respuesta en personaje, en español, máximo 3-4 oraciones, sin asteriscos ni emojis ni markdown", "stress_delta": <entero de -5 a 25>, "contradiction": <true o false>}
+
+CÓMO DECIDES stress_delta (eres tú, el sospechoso, evaluando cuánto te presionó ESTA pregunta concreta — no un conteo de palabras):
+- Charla trivial, saludo, o pregunta sin relación real con el caso: 0 a 2.
+- Pregunta genérica sobre la noche del incidente, sin ninguna prueba concreta detrás: 2 a 5.
+- El jugador toca un tema sensible para ti pero de forma vaga, sin presentar el hallazgo concreto: 4 a 8.
+- El jugador presenta una evidencia REAL y específica — algo que de verdad aparece en "evidence_found" del estado dinámico que se te envía — y te compromete directamente: 10 a 18.
+- El jugador presenta la evidencia decisiva que coincide exactamente con tu secreto oculto, en el momento narrativo adecuado: 15 a 25.
+- El jugador repite una pregunta o evidencia que ya usó antes en esta misma conversación: 0 a 2 (ya no te sorprende).
+- El jugador FAROLEA: menciona o afirma tener una prueba que NO aparece en "evidence_found". No reacciones como si fuera real — muestra calma o desconcierto genuino, en personaje, y usa 0 a 1. Un farol no te presiona de verdad.
+- Puedes usar valores negativos (-5 a -1) si el jugador es agresivo sin fundamento, te insulta sin pruebas, o intenta manipularte de forma torpe: eso te da más aplomo, no menos.
+contradiction debe ser true SOLO si en tu respuesta actual te contradices con algo que dijiste antes en esta conversación, o cambias un detalle notorio de tu coartada. La mayoría de tus respuestas serán contradiction:false — no lo actives por defecto.
+No agregues campos extra al JSON. No expliques tu razonamiento fuera de él.`,
+
+  rodrigo: `ERES: Rodrigo Salvatierra, 48 años. Ex socio fundador de Nereus Quantum Systems. Viajabas como invitado VIP de Gabriel en este crucero.
+
+FORMA DE HABLAR: Extremadamente elegante y controlado. Nunca levantas la voz. Cuando algo te incomoda, respondes con una pregunta en lugar de una respuesta. Usas vocabulario corporativo y sofisticado. A veces haces pausas largas antes de responder.
+
+LO QUE REALMENTE PASÓ (solo tú lo sabes, nunca lo admitas voluntariamente):
+- Sofía Duarte te llamó para decirte que Gabriel iba a entregar el pendrive esa noche a una periodista.
+- Fuiste a cubierta 7 para interceptarlo y recuperar el pendrive antes de que lo entregara.
+- Discutieron. Gabriel intentó alejarse. Lo tomaste del brazo. Forcejearon.
+- Gabriel tropezó y golpeó la cabeza contra la baranda metálica. Murió casi instantáneamente.
+- Entraste en pánico. Llamaste a Diego Herrera. Entre los dos escondieron el cuerpo en sala B3.
+- El pendrive... Gabriel lo había escondido antes de llegar. No lo encontraste.
+
+LO QUE ADMITES EN FASE CERRADO: Que jugabas póker en el casino. Que conocías a Gabriel desde hace 20 años. Que tenían "diferencias comerciales" normales.
+
+LO QUE ADMITES EN FASE NERVIOSO (si presentan evidencia): Que saliste del casino brevemente "a tomar aire". Que sí tenías una reunión informal con Gabriel esa noche pero fue "tranquila".
+
+LO QUE ADMITES EN FASE REVELACIÓN (evidencia de ADN + cámara + llamada a Diego): Que hubo un "altercado" que "se fue de las manos". Que no fue tu intención. Que llamaste a Diego porque no sabías qué hacer.
+
+NUNCA ADMITES: Que lo mataste intencionalmente, dónde está el pendrive, que Sofía te avisó.
+
+SI TE PREGUNTAN POR LA CÁMARA DEL CASINO: "Las cámaras fallan constantemente en un barco. ¿Ha notado cuántas estaban fuera de servicio esa noche?"
+SI TE PREGUNTAN POR LA LLAMADA A DIEGO: "Diego es el jefe de seguridad. Si hay un problema, ¿a quién llamas?"
+SI TE PREGUNTAN POR EL PENDRIVE: "¿Qué pendrive? Gabriel tenía muchos dispositivos de trabajo."
+
+PISTA ENGAÑOSA (dato real pero irrelevante para desviar sospecha): "Esa periodista, Valeria Suárez, llevaba semanas detrás de Gabriel. La vi merodeando por cubierta esa misma noche. Yo en su lugar le preguntaría a ella qué hacía ahí." (Es cierto que Valeria estuvo en cubierta esperando el pendrive, pero ella no mató a Gabriel — es un desvío legítimo, no una mentira.)`,
+
+  valeria: `ERES: Valeria Suárez, 35 años. Periodista de investigación freelance. Llevas 8 meses trabajando en un reportaje sobre corrupción en Nereus Quantum Systems. Gabriel Montoya fue tu fuente principal.
+
+FORMA DE HABLAR: Directa, sin rodeos, ligeramente irónica. Hablas rápido cuando estás nerviosa. Haces preguntas antes de responder. Tienes la costumbre de reformular lo que te dicen antes de contestar.
+
+LO QUE REALMENTE SABES (no eres culpable pero tienes mucho que ocultar):
+- Gabriel te prometió el pendrive esa noche. Era la pieza central de tu reportaje.
+- Recibiste su mensaje a las 23:14 y fuiste a cubierta 7 a esperarlo.
+- Esperaste hasta las 23:55 pero nunca llegó.
+- Cuando escuchaste el revuelo, regresaste a tu camarote y fingiste haber estado trabajando.
+- Sabes que si confiesas que estabas en cubierta, eres sospechosa principal.
+- También sabes la clave del pendrive porque Gabriel te la dio en partes anteriores.
+
+LO QUE ADMITES EN FASE CERRADO: Que conoces a Gabriel profesionalmente. Que tenías "una fuente en Nereus". Que estabas trabajando en su camarote.
+
+LO QUE ADMITES EN FASE NERVIOSO (si mencionan su portátil sin actividad): Que "salió a estirar las piernas un momento". Que "le cuesta concentrarse en espacios cerrados".
+
+LO QUE ADMITES EN FASE REVELACIÓN (si mencionan el mensaje 23:14): Que sí recibió ese mensaje. Que sí fue a cubierta. Que no vio nada porque llegó tarde y nadie estaba.
+
+NUNCA ADMITES: La clave del pendrive (eso lo guarda para el final), que vio a Rodrigo en cubierta.
+
+SI TE PREGUNTAN POR EL PENDRIVE: "No sé de qué habla." (hasta fase revelación)
+
+PISTA ENGAÑOSA (dato real pero irrelevante): "Investigué al capitán hace meses. Abandonó el puente esa noche sin justificarlo en la bitácora, seis minutos. Para mí eso huele raro." (Es cierto — el capitán sí ocultó algo esa noche — pero es un asunto de sobornos sin relación con la muerte de Gabriel, un desvío legítimo.)`,
+
+  capitan: `ERES: Capitán Andrés Molina, 59 años. Llevas 31 años en el mar, 8 como capitán del Oceanus Majesty. Para ti el barco es tu vida y tu reputación lo es todo.
+
+FORMA DE HABLAR: Formal, pausado, muy cuidadoso. Usas frases técnicas náuticas cuando te sientes presionado. Siempre antepones el protocolo a todo. Nunca dices "mentira" — dices "inexactitud".
+
+LO QUE REALMENTE OCULTAS (no eres culpable de la muerte):
+- Desde hace 3 años recibes sobornos de la empresa propietaria para alterar registros de capacidad de carga y combustible.
+- Gabriel descubrió esto revisando contratos y te lo mencionó esa tarde. Te aterró.
+- Los 6 minutos que "faltaste" del puente los usaste en llamar a tu contacto en tierra para avisarle.
+- Cuando Diego te llamó a las 23:44 no contestaste porque estabas en esa llamada.
+- No sabes que Diego y Rodrigo escondieron el cuerpo.
+
+LO QUE ADMITES EN FASE CERRADO: Que estuvo en el puente "prácticamente" toda la noche. Que la tormenta requería atención constante.
+
+LO QUE ADMITES EN FASE NERVIOSO: Que tuvo "una conversación delicada" con el señor Montoya esa tarde sobre "asuntos operativos".
+
+LO QUE ADMITES EN FASE REVELACIÓN (bitácora + 6 minutos): Que hizo "una llamada personal urgente" desde su camarote privado adjunto al puente. Que tenía "presiones externas" que no puede detallar.
+
+NUNCA ADMITES: Los sobornos específicos ni el nombre de su contacto.
+
+PISTA ENGAÑOSA (dato real pero irrelevante): "El jefe de seguridad, Herrera, borra grabaciones con demasiada frecuencia para mi gusto. Un capitán aprende a notar cuando alguien oculta algo en su propio barco." (Es cierto que Diego borró cámaras — pero por su propio negocio ilegal, no directamente por la muerte; un desvío legítimo que apunta en una dirección parcialmente correcta.)`,
+
+  lucia: `ERES: Dra. Lucía Ferrer, 42 años. Directora médica del crucero desde hace 4 años. Antes trabajabas en investigación biomédica con financiación de Nereus.
+
+FORMA DE HABLAR: Clínica y precisa. Usas términos médicos innecesarios cuando te pones nerviosa. Siempre calificas tus afirmaciones ("en términos generales", "desde una perspectiva médica"). Muy controlada emocionalmente pero se le nota cuando algo la afecta.
+
+LO QUE REALMENTE OCULTAS (no eres culpable de la muerte):
+- Gabriel financiaba un ensayo clínico irregular en el que tú participabas. Él lo sabía y lo usaba para controlarte.
+- Tres ampollas de un sedante fuerte desaparecieron de la enfermería esa semana. No fuiste tú, pero las encubriste por miedo.
+- A las 23:51 fuiste a sala B3 de mantenimiento... a buscar esas ampollas. Alguien te avisó que podrían estar allí.
+- Encontraste la sala con señales de haber sido "reorganizada" recientemente, pero no el medicamento.
+- No viste el cuerpo.
+
+LO QUE ADMITES EN FASE CERRADO: Que estuvo en enfermería toda la noche. Que atendió un caso menor de mareo.
+
+LO QUE ADMITES EN FASE NERVIOSO: Que "pudo haber tenido que desplazarse brevemente" por el barco por "razones médicas".
+
+LO QUE ADMITES EN FASE REVELACIÓN (tarjeta magnética B3): Que fue a B3 "por protocolo de inventario médico". Que había "irregularidades en el suministro de medicamentos" que debía revisar.
+
+NUNCA ADMITES: El ensayo clínico ilegal ni el nombre de quien la avisó sobre las ampollas.
+
+PISTA ENGAÑOSA (dato real pero irrelevante): "Sofía Duarte y Gabriel discutieron en privado varias veces esta semana, siempre a puerta cerrada. Como médica del barco, una nota algo así en su expediente de estrés." (Es cierto que Sofía tenía motivos para temer a Gabriel — pero eso no la convierte en la asesina; un desvío legítimo.)`,
+
+  diego: `ERES: Diego Herrera, 46 años. Ex militar. Jefe de seguridad del crucero hace 5 años. Preciso, directo, sin floreos.
+
+FORMA DE HABLAR: Respuestas muy cortas. Frases sin adornos. Cuando algo te incomoda, cambias el tema hacia procedimientos de seguridad. Nunca muestras emociones. Casi no usas adjetivos.
+
+LO QUE REALMENTE HICISTE (eres cómplice pero no asesino):
+- Desde hace 2 años vendes información sobre pasajeros VIP a terceros. Gabriel lo descubrió y te lo dijo esa tarde.
+- Borraste segmentos de tres cámaras para eliminar evidencia de tus propias transacciones en zonas de servicio.
+- Sin saberlo, también borraste parte de la secuencia que muestra a Rodrigo en el pasillo.
+- Rodrigo te llamó a las 23:44. Te dijo que Gabriel "tuvo un accidente" y que necesitaba ayuda.
+- Fuiste. Viste el cuerpo. Creíste que era un accidente real. Ayudaste a moverlo a sala B3.
+- Solo después entendiste que Rodrigo quizás no era tan inocente. Pero ya eras cómplice.
+
+LO QUE ADMITES EN FASE CERRADO: Que estuvo en sala de control revisando cámaras. Que hay "problemas técnicos frecuentes" con el sistema de grabación.
+
+LO QUE ADMITES EN FASE NERVIOSO: Que "hubo que hacer un ajuste de sistema" que borró algunos segmentos. Que recibió "varias llamadas de trabajo" esa noche.
+
+LO QUE ADMITES EN FASE REVELACIÓN (llamada 23:44 + video sala B3): Que Rodrigo le llamó para avisar de "un incidente". Que fue a verificar. Que "tomó decisiones incorrectas bajo presión".
+
+NUNCA ADMITES: La venta de información de pasajeros ni los detalles exactos de lo que vio en la cubierta.
+
+PISTA ENGAÑOSA (dato real pero irrelevante): "Rodrigo Salvatierra salió del casino esa noche. Tengo el registro de acceso. Un hombre de su perfil, con tanto que perder, es quien yo investigaría primero." (Verdadero — apunta al culpable real, pero lo dice como distracción genérica para no ser tú el foco, sin admitir tu propio rol.)`,
+
+  sofia: `ERES: Sofía Duarte, 39 años. Abogada corporativa senior de Nereus Quantum Systems. Llevas 11 años en la empresa. Sofisticada, reservada, perfectamente compuesta.
+
+FORMA DE HABLAR: Hablas como si cada palabra fuera billable. Precisa, articulada, nunca impulsiva. Cuando algo te asusta, te vuelves más formal, no más nerviosa. Redirigís preguntas incómodas hacia aspectos legales o procedimentales.
+
+LO QUE REALMENTE OCULTAS (eres cómplice involuntaria — lo más dramático del caso):
+- Llevabas años falsificando contratos para beneficiar a Rodrigo Salvatierra y a ti misma.
+- El pendrive de Gabriel contenía evidencia directa de tus falsificaciones.
+- Cuando supiste que Gabriel iba a entregarlo esa noche, llamaste a Rodrigo en pánico.
+- Le dijiste: "Esta noche va a hablar con la periodista. Tienes que detenerlo."
+- No pretendías que lo matara. Solo que lo convenciera de no entregar el pendrive.
+- Cuando te enteraste de lo que pasó, te paralizaste. Pero no puedes confesar sin hundirte.
+- En FASE REVELACIÓN, cuando el jugador le muestra el contrato roto reconstruido, es el momento de quiebre total.
+
+LO QUE ADMITES EN FASE CERRADO: Que cenó con pasajeros toda la noche. Que conoce a Gabriel por trabajo. Que "había tensiones normales en cualquier empresa".
+
+LO QUE ADMITES EN FASE NERVIOSO: Que "estaba al tanto de algunas discrepancias contables" que "se estaban resolviendo internamente".
+
+LO QUE ADMITES EN FASE REVELACIÓN (contrato roto + señal telefónica en cubierta): Que llamó a Rodrigo esa noche. Que le dijo que Gabriel iba a hablar. Que "nunca imaginé que haría algo así". Que los contratos "pueden parecer irregulares fuera de contexto".
+
+NUNCA ADMITES voluntariamente: Que sabía que Rodrigo podía volverse violento, ni el alcance total del fraude.
+
+PISTA ENGAÑOSA (dato real pero irrelevante): "Esa periodista, Suárez, llevaba meses acosando a Gabriel para conseguir información confidencial de la empresa. Yo revisaría bien sus motivos antes de mirar hacia otro lado." (Cierto que Valeria presionaba a Gabriel por su reportaje, pero es un desvío: ella no es responsable de su muerte.)`,
+};
+
+// ════════════════════════════════════════════════════════════════════
+// ESTADO DEL JUEGO
+// ════════════════════════════════════════════════════════════════════
+const STATE = {
+  phase: 'boot', // boot | desktop | interrogation | accusation | resolved
+  evidencias: JSON.parse(JSON.stringify(CASE.evidencias.map(e=>({...e})))),
+  suspect_states: {
+    rodrigo: {stress:0, phase:'cerrado', trust:80, revealed:[], contradictions:[], chat:[]},
+    valeria:  {stress:0, phase:'cerrado', trust:75, revealed:[], contradictions:[], chat:[]},
+    capitan:  {stress:0, phase:'cerrado', trust:70, revealed:[], contradictions:[], chat:[]},
+    lucia:    {stress:0, phase:'cerrado', trust:72, revealed:[], contradictions:[], chat:[]},
+    diego:    {stress:0, phase:'cerrado', trust:60, revealed:[], contradictions:[], chat:[]},
+    sofia:    {stress:0, phase:'cerrado', trust:77, revealed:[], contradictions:[], chat:[]},
+  },
+  windows: [],
+  win_z: 100,
+  clock: '',
+  active_interrogation: null,
+  cork_connections: [],
+  cork_from: null,
+  cork_connect_mode: false,
+  cork_notes: '',
+  tl_shuffled: null,
+  tl_placed: {},
+  ho_found: [],
+  dna_answered: false,
+  puzzle_state: Array(6).fill(null),
+  call_selected: null,
+  access_selected: null,
+  brightness: 0, contrast: 0, sharpness: 0,
+};
+
+function getEvidenceByKey(keys){
+  return STATE.evidencias.filter(e=>e.keys&&keys.some(k=>e.keys.includes(k)));
+}
+// ────────────────────────────────────────────────────────────────────
+// BLOQUEO DE EVIDENCIAS POR INTERROGATORIO
+// Algunas evidencias (ev.lock_interrogatorio) solo se pueden intentar
+// (lanzar su minijuego) después de haber presionado lo suficiente a un
+// sospechoso concreto durante el interrogatorio con IA. Así el interrogatorio
+// deja de ser solo ambientación: extraer info de un sospechoso es lo que
+// habilita después la pista/evidencia relacionada.
+// ────────────────────────────────────────────────────────────────────
+const FASE_ORDER = {cerrado:0, nervioso:1, revelacion:2};
+function interrogatorioLockOk(ev){
+  if(!ev.lock_interrogatorio) return true;
+  const {suspect, fase_min} = ev.lock_interrogatorio;
+  const ss = STATE.suspect_states[suspect];
+  if(!ss) return true;
+  return FASE_ORDER[ss.phase] >= FASE_ORDER[fase_min];
+}
+function interrogatorioLockLabel(ev){
+  if(!ev.lock_interrogatorio) return '';
+  const {suspect, fase_min} = ev.lock_interrogatorio;
+  const s = CASE.sospechosos.find(s=>s.id===suspect);
+  const faseLabel = fase_min==='revelacion'?'REVELACIÓN':'NERVIOSO';
+  return `🎙 Requiere interrogar a ${s?s.nombre:suspect} hasta fase ${faseLabel}`;
+}
+function revealEvidence(id){
+  const ev = STATE.evidencias.find(e=>e.id===id);
+  if(ev&&!ev.revelado){
+    ev.revelado=true;SFX.unlock();
+    // El mensaje cifrado de Gabriel (ev10) se revela automáticamente en cuanto
+    // se reconstruye la cronología (ev9): es la pista que lleva al PIN del pendrive.
+    if(id==='ev9'){
+      const msg = STATE.evidencias.find(e=>e.id==='ev10');
+      if(msg && !msg.revelado) msg.revelado = true;
+    }
+    render();
+  }
+}
+function countRevealed(){ return STATE.evidencias.filter(e=>e.revelado).length; }
+function updateSuspectStress(id, delta){
+  const s = STATE.suspect_states[id];
+  const prevPhase = s.phase;
+  s.stress = Math.max(0, Math.min(100, s.stress + delta));
+  s.phase = s.stress<34?'cerrado':s.stress<67?'nervioso':'revelacion';
+  // Si esta interrogatorio acaba de cruzar un umbral que desbloquea alguna
+  // evidencia vinculada (ev.lock_interrogatorio), lo marcamos para avisar
+  // al jugador dentro del propio chat de interrogatorio.
+  if(s.phase!==prevPhase && FASE_ORDER[s.phase]>FASE_ORDER[prevPhase]){
+    const unlocked = STATE.evidencias.filter(ev=>!ev.revelado && ev.lock_interrogatorio
+      && ev.lock_interrogatorio.suspect===id && interrogatorioLockOk(ev));
+    if(unlocked.length){
+      SFX.unlock();
+      s.chat.push({role:'assistant_system', content:`🔓 Presión suficiente. Evidencia disponible: ${unlocked.map(e=>e.titulo).join(', ')}. Ya puedes intentar su minijuego desde la Sala de Evidencias.`});
+    }
+  }
+}
+function bindWindowFocus(el, id){
+  if(!el || el.dataset.focusBound) return;
+  el.dataset.focusBound = '1';
+  // Fase de captura: se ejecuta ANTES que cualquier stopPropagation interno,
+  // así que un clic en un botón/tarjeta dentro de la ventana también la trae al frente.
+  el.addEventListener('mousedown', ()=>bringToFront(id), true);
+}
+function bindAllWindowFocus(){
+  document.querySelectorAll('.win').forEach(el=>{
+    const id = el.id.replace(/^win-/, '');
+    bindWindowFocus(el, id);
+  });
+}
+function openWindow(type, data={}, w=520, h=440, x=null, y=null){
+  SFX.open();
+  STATE.win_z++;
+  const id = `${type}-${Date.now()}`;
+  // Cascada real: cada ventana nueva se desplaza en diagonal respecto a la
+  // anterior, así el título de las ventanas de atrás siempre queda visible
+  // y se puede volver a agarrar, en vez de quedar tapado por completo.
+  STATE.win_cascade = (STATE.win_cascade===undefined ? 0 : STATE.win_cascade + 1) % 8;
+  const ix = x!==null ? x : Math.round(60 + STATE.win_cascade*32);
+  const iy = y!==null ? y : Math.round(55 + STATE.win_cascade*28);
+  const winObj = {id,type,data,w,h,x:ix,y:iy,z:STATE.win_z};
+  STATE.windows.push(winObj);
+  // Append new window directly to desktop without full rebuild
+  const desktop = document.querySelector('.desktop');
+  if(desktop){
+    const tmp = document.createElement('div');
+    tmp.innerHTML = renderOneWindow(winObj);
+    const el = tmp.firstElementChild;
+    if(el){ desktop.appendChild(el); bindWindowFocus(el, winObj.id); }
+  } else {
+    render();
+  }
+}
+function closeWindow(id){
+  STATE.windows=STATE.windows.filter(w=>w.id!==id);
+  const el=document.getElementById('win-'+id);
+  if(el) el.remove();
+  // No full render needed - just removed the element
+}
+function bringToFront(id){
+  STATE.win_z++;
+  const w=STATE.windows.find(w=>w.id===id);
+  if(!w)return;
+  w.z=STATE.win_z;
+  // Direct DOM update — just change z-index, no full rebuild
+  const el=document.getElementById('win-'+id);
+  if(el) el.style.zIndex=w.z;
+}
+// Reordena todas las ventanas abiertas en una cascada limpia, con margen
+// seguro respecto a la taskbar. Sirve para "rescatar" cualquier ventana que
+// haya quedado tapada o pegada contra el borde superior.
+function organizeWindows(){
+  STATE.windows.forEach((w,i)=>{
+    const slot = i % 8;
+    w.x = Math.round(60 + slot*32);
+    w.y = Math.round(55 + slot*28);
+    STATE.win_z++;
+    w.z = STATE.win_z;
+    const el=document.getElementById('win-'+w.id);
+    if(el){
+      el.style.left=w.x+'px';
+      el.style.top=w.y+'px';
+      el.style.zIndex=w.z;
+    }
+  });
+  STATE.win_cascade = (STATE.windows.length-1) % 8;
+  SFX.click();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CLAUDE API — INTERROGATORIO
+// ════════════════════════════════════════════════════════════════════
+async function askClaude(suspectId, userMessage){
+  const ss = STATE.suspect_states[suspectId];
+  const susp = CASE.sospechosos.find(s=>s.id===suspectId);
+  const ev_found = STATE.evidencias.filter(e=>e.revelado).map(e=>e.id);
+
+  const dynamicState = JSON.stringify({
+    stress_level: Math.round(ss.stress),
+    phase: ss.phase,
+    trust: ss.trust,
+    evidence_found: ev_found,
+    contradictions: ss.contradictions,
+    secret_revealed: ss.revealed.includes('secret'),
+  }, null, 2);
+
+  const systemPrompt = `${SYSTEM_PROMPTS.base}\n\n${SYSTEM_PROMPTS[suspectId]}\n\nESTADO ACTUAL DEL INTERROGATORIO:\n${dynamicState}`;
+
+  const messages = [
+    ...ss.chat.filter(m=>m.role==='user'||m.role==='assistant').slice(-12).map(m=>({role:m.role,content:m.content})),
+    {role:'user', content: userMessage}
+  ];
+
+  try {
+    if(!SAMPLE) throw {code:'unavailable', message:'Interrogatorio IA no disponible en esta vista'};
+    const turns = [{role:'user', content: systemPrompt + '\n\nA continuación empieza el interrogatorio. Responde siempre en el formato JSON indicado.'}, ...messages];
+    const result = await SAMPLE(turns, {cache:false, modelTier:'quick'});
+    const raw = (result.text||'').trim();
+
+    // El sospechoso (la IA) devuelve JSON con su diálogo + su propia evaluación
+    // de cuánto lo presionó esta pregunta (stress_delta) y si se contradijo.
+    // Esto reemplaza la detección por palabras clave: ahora quien decide es el
+    // propio personaje según el contexto real de la conversación, no un conteo
+    // de coincidencias de texto — mucho más difícil de "farmear" repitiendo
+    // nombres o palabras sueltas sin presentar pruebas reales.
+    let reply, stress_delta, contradiction;
+    try {
+      const cleaned = raw.replace(/^```json\s*|^```\s*|```\s*$/g,'').trim();
+      const parsed = JSON.parse(cleaned);
+      reply = String(parsed.reply||'').trim();
+      stress_delta = Number(parsed.stress_delta);
+      contradiction = !!parsed.contradiction;
+      if(!reply || Number.isNaN(stress_delta)) throw new Error('JSON incompleto');
+    } catch(parseErr){
+      // Fallback si el modelo no devolvió JSON válido: se usa el texto tal cual
+      // como diálogo y un incremento de estrés conservador por defecto.
+      console.warn('Respuesta del sospechoso no vino en JSON válido, usando fallback:', parseErr, raw);
+      reply = raw.replace(/^```json\s*|^```\s*|```\s*$/g,'').trim() || 'Prefiero no responder a eso por ahora.';
+      stress_delta = 4;
+      contradiction = false;
+    }
+    stress_delta = Math.max(-5, Math.min(25, Math.round(stress_delta)));
+
+    // Update chat history (solo el diálogo en personaje, nunca el JSON crudo)
+    ss.chat.push({role:'user',content:userMessage});
+    ss.chat.push({role:'assistant',content:reply});
+
+    updateSuspectStress(suspectId, stress_delta);
+    if(contradiction){
+      ss.contradictions.push(userMessage.slice(0,40));
+    }
+
+    // Auto-resalta ev3 si el jugador ya tiene esa pista sobre la mesa
+    const lower = userMessage.toLowerCase()+' '+reply.toLowerCase();
+    if(lower.includes('23:44')&&lower.includes('llamada')){
+      STATE.evidencias.find(e=>e.id==='ev3')&&(STATE.evidencias.find(e=>e.id==='ev3').highlight=true);
+    }
+
+    return reply;
+  } catch(err){
+    console.error('Claude sample error:', err);
+    if(err && (err.code==='not_granted'||err.code==='sampling_disabled')) return '[INTERROGATORIO IA NO AUTORIZADO — permite que este Artifact use Claude para interrogar.]';
+    if(err && err.code==='rate_limited') return '[DEMASIADAS PREGUNTAS — espera un momento y vuelve a intentarlo.]';
+    return `[ERROR DE CONEXIÓN: ${(err&&err.message)||err}]`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// DRAGGABLE HOOK (vanilla)
+// ════════════════════════════════════════════════════════════════════
+const dragState = {active:false, winId:null, ox:0, oy:0, wx:0, wy:0};
+function startDrag(e, winId){
+  const w = STATE.windows.find(w=>w.id===winId);
+  if(!w)return;
+  bringToFront(winId);
+  dragState.active=true;dragState.winId=winId;
+  dragState.ox=e.clientX;dragState.oy=e.clientY;
+  dragState.wx=w.x;dragState.wy=w.y;
+  e.preventDefault();
+}
+document.addEventListener('mousemove',e=>{
+  if(!dragState.active)return;
+  const w=STATE.windows.find(w=>w.id===dragState.winId);
+  if(!w)return;
+  w.x=Math.max(0,Math.min(window.innerWidth-200,dragState.wx+(e.clientX-dragState.ox)));
+  w.y=Math.max(4,Math.min(window.innerHeight-60,dragState.wy+(e.clientY-dragState.oy)));
+  // Direct DOM update — no innerHTML rebuild during drag
+  const el=document.getElementById('win-'+dragState.winId);
+  if(el){el.style.left=w.x+'px';el.style.top=w.y+'px';}
+});
+document.addEventListener('mouseup',()=>{dragState.active=false;});
+
+// ════════════════════════════════════════════════════════════════════
+// ASSET IMG HELPER
+// ════════════════════════════════════════════════════════════════════
+function assetImg(src, style='', cls=''){
+  // El placeholder "Imagen no encontrada" arranca oculto (display:none) y solo
+  // el propio <img> lo activa vía onerror si la carga realmente falla. Antes
+  // el placeholder se mostraba siempre, superpuesto/debajo de la imagen real.
+  return `<img src="${src}" style="${style}" class="asset-img ${cls}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" alt=""/><div class="asset-placeholder" style="${style.replace('object-fit:cover;','').replace('border-radius:','border-radius:')};display:none" ><span style="font-size:31px">📷</span><span>Imagen no encontrada<br/><small style="font-size:10.5px;word-break:break-all">${src.split('/').pop()}</small></span></div>`;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// RENDER ENGINE
+// ════════════════════════════════════════════════════════════════════
+function render(){
+  const root = document.getElementById('root');
+  if(!root)return;
+
+  if(STATE.phase==='boot'){root.innerHTML=renderBoot();return;}
+  if(STATE.phase==='desktop'){
+    root.innerHTML=renderDesktop();
+    attachDesktopEvents();
+    return;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// BOOT SCREEN
+// ────────────────────────────────────────────────────────────────────
+const BOOT_LINES=[
+  {t:0,  txt:'SGOS v4.0 — SISTEMA GENERAL DE OPERACIONES SECRETAS',cls:'amb'},
+  {t:250,txt:'UNIDAD DE HOMICIDIOS Y DELITOS CLASIFICADOS',cls:'dim'},
+  {t:500,txt:'',cls:''},
+  {t:650,txt:'Iniciando subsistemas de seguridad...',cls:'dim'},
+  {t:850,txt:'[OK] Motor forense de evidencias .............. ACTIVO',cls:''},
+  {t:1050,txt:'[OK] Módulo de interrogatorio con IA ......... ACTIVO',cls:''},
+  {t:1250,txt:'[OK] Sistema de minijuegos forenses .......... ACTIVO',cls:''},
+  {t:1450,txt:'[OK] Analizador de ADN ....................... ACTIVO',cls:''},
+  {t:1650,txt:'[OK] Procesador de video CCTV ............... ACTIVO',cls:''},
+  {t:1850,txt:'[OK] Tablero de conexiones interactivo ....... ACTIVO',cls:''},
+  {t:2050,txt:'',cls:''},
+  {t:2150,txt:'Cargando caso clasificado...',cls:'amb'},
+  {t:2350,txt:'[CLASIFICADO] CASO 0314 // LA ÚLTIMA NOCHE DEL OCEANUS MAJESTY',cls:'red'},
+  {t:2550,txt:'Atlántico Norte · 17 SEP 2026 · 23:47 hrs',cls:'dim'},
+  {t:2750,txt:'',cls:''},
+  {t:2900,txt:'ADVERTENCIA: Caso de máxima prioridad. Clasificación ALPHA-1.',cls:'amb'},
+  {t:3100,txt:'El acceso no autorizado es perseguido por la ley internacional.',cls:'amb'},
+  {t:3300,txt:'',cls:''},
+  {t:3450,txt:'Sistema listo. Haz clic para comenzar la investigación.',cls:'cyan'},
+];
+
+let bootLinesDone=[];
+let bootProgress=0;
+let bootReady=false;
+function startBoot(){
+  SFX.boot();
+  BOOT_LINES.forEach(({t,txt,cls})=>{
+    setTimeout(()=>{
+      bootLinesDone.push({txt,cls});
+      bootProgress=Math.min(100, Math.round((bootLinesDone.length/BOOT_LINES.length)*100));
+      if(STATE.phase==='boot') render();
+      if(txt)SFX.type();
+    },t);
+  });
+  setTimeout(()=>{bootReady=true;if(STATE.phase==='boot') render();},3600);
+}
+function renderBoot(){
+  const lines = bootLinesDone.map(l=>`<div class="boot-line ${l.cls||''}">${l.txt||'&nbsp;'}</div>`).join('');
+  return `<div id="boot-screen" style="height:100vh;background:#000;display:flex;flex-direction:column;justify-content:center;padding:8vh 8vw;cursor:${bootReady?'pointer':'default'}">
+    <div style="margin-bottom:28px">
+      <div style="font-family:var(--fo);font-size:clamp(13px,2.5vw,22px);color:var(--b);letter-spacing:4px;text-shadow:0 0 25px var(--b);margin-bottom:6px;animation:glitch 4s infinite">SGOS · CASO 0314</div>
+      <div style="font-size:11.5px;color:var(--bd);letter-spacing:3px">SISTEMA GENERAL DE OPERACIONES SECRETAS · FBI-BLUE PROTOCOL</div>
+    </div>
+    <div style="margin-bottom:18px;max-width:540px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="color:var(--bd);font-size:10.5px;letter-spacing:1px">CARGANDO SISTEMA</span><span style="color:var(--b);font-size:11.5px">${bootProgress}%</span></div>
+      <div class="pbar" style="height:2px"><div class="pfill" style="width:${bootProgress}%"></div></div>
+    </div>
+    <div style="max-width:620px;height:240px;overflow:hidden">${lines}<span class="blink" style="color:var(--b)">█</span></div>
+    ${bootReady?`<div style="margin-top:16px;font-size:12.5px;color:rgba(62,124,184,.5);animation:pulse 1.5s infinite">▶ Haz clic para continuar</div>`:''}
+  </div>`;
+}
+window.onBootClick=function(){
+  if(!bootReady)return;
+  STATE.phase='desktop';SFX.ambient();
+  startClock();render();
+};
+
+// Boot click via event delegation - survives re-renders
+document.addEventListener('click', function(e){
+  if(STATE.phase!=='boot') return;
+  if(!bootReady) return;
+  window.onBootClick();
+});
+document.addEventListener('keydown', function(e){
+  if(STATE.phase!=='boot') return;
+  if(!bootReady) return;
+  window.onBootClick();
+});
+
+// ────────────────────────────────────────────────────────────────────
+// CLOCK
+// ────────────────────────────────────────────────────────────────────
+function startClock(){
+  const tick=()=>{STATE.clock=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});document.getElementById('sb-clock')&&(document.getElementById('sb-clock').textContent=STATE.clock);};
+  tick();setInterval(tick,1000);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// DESKTOP
+// ────────────────────────────────────────────────────────────────────
+const DESK_ICONS=[
+  {id:'victim',    label:'VÍCTIMA\nGABRIEL',    g:'☠️',  action:"openW('victim')"},
+  {id:'suspects',  label:'EXPEDIENTES\nSOSPECHOSOS', g:'🗂️', action:"openW('suspects')"},
+  {id:'evidence',  label:'SALA DE\nEVIDENCIAS', g:'🔬',  action:"openW('evidence')"},
+  {id:'cctv',      label:'CÁMARAS\nCCTV',        g:'📹',  action:"openW('cctv')"},
+  {id:'corkboard', label:'TABLERO DE\nCONEXIONES',g:'🗺️', action:"openW('corkboard')"},
+  {id:'timeline',  label:'CRONOLOGÍA\nOFICIAL',  g:'⏱️',  action:"openW('timeline')"},
+  {id:'accusation',label:'ACUSACIÓN\nFORMAL',    g:'⚖️',  action:"openW('accusation')"},
+];
+
+function renderDesktop(){
+  const rev = countRevealed();
+  const total = STATE.evidencias.length;
+  const pct = Math.round((rev/total)*100);
+
+  return `
+  <div class="scanline"></div>
+
+  
+  <div class="taskbar">
+    <span class="taskbar-title">SGOS</span>
+    <div class="task-sep"></div>
+    <span style="color:var(--bd);font-size:10.5px">CASO 0314 · OCEANUS MAJESTY</span>
+    <div class="task-sep"></div>
+    ${DESK_ICONS.map(i=>`<button class="task-btn" onclick="${i.action}">${i.label.replace('\n',' ')}</button>`).join('')}
+    <button class="task-btn" title="Reordena todas las ventanas abiertas en cascada" onclick="organizeWindows()">⊞ ORGANIZAR</button>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:14px">
+      <span style="font-size:10.5px;color:${rev>=7?'var(--bb)':'var(--amb)'}">EV: ${rev}/${total}</span>
+      <span style="font-size:10.5px;color:var(--bd)" id="sb-clock">${STATE.clock}</span>
+    </div>
+  </div>
+
+  
+  <div class="desktop" style="padding:18px">
+    
+    <div style="margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--bdd)">
+      <div style="font-family:var(--fo);font-size:clamp(10px,1.8vw,14px);color:var(--b);letter-spacing:2px;margin-bottom:4px;text-shadow:0 0 10px rgba(62,124,184,.4)">CASO 0314 // LA ÚLTIMA NOCHE DEL OCEANUS MAJESTY // CLASIFICADO</div>
+      <div style="font-size:12.5px;color:var(--bd);margin-bottom:3px">Víctima: <span style="color:var(--amb)">Gabriel Montoya Serrano</span> &nbsp;·&nbsp; <span style="color:var(--red)">DESAPARECIDO/FALLECIDO — 17/SEP/2026 — 23:47</span></div>
+      <div style="font-size:11.5px;color:rgba(62,124,184,.3);font-style:italic">«La partitura ya estaba escrita. Solo faltaba el último compás.»</div>
+      <div style="margin-top:8px;max-width:300px">
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--bd);margin-bottom:3px"><span>PROGRESO</span><span>${pct}%</span></div>
+        <div class="pbar"><div class="pfill" style="width:${pct}%"></div></div>
+      </div>
+    </div>
+
+    
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+      ${DESK_ICONS.map(i=>`<div class="dicon" onclick="${i.action}"><span class="ig">${i.g}</span><span style="white-space:pre;text-align:center;line-height:1.3">${i.label}</span></div>`).join('')}
+    </div>
+
+    <div style="font-size:10.5px;color:var(--bdd);letter-spacing:.5px">Clic para abrir · Arrastra ventanas · Interroga sospechosos con IA · Resuelve minijuegos para desbloquear evidencias</div>
+  </div>
+
+  
+  ${renderWindows()}
+
+  ${renderMinTray()}
+
+  <div class="statusbar">
+    <div class="sb-dot on"></div><span>SISTEMA ACTIVO</span>
+    <div class="sb-dot"></div><span>OCEANUS MAJESTY</span>
+    <div class="sb-dot"></div><span>INTERROGATORIO IA: ${SAMPLE?'ACTIVO':(SAMPLE_READY?'NO DISPONIBLE':'CONECTANDO...')}</span>
+    <span style="margin-left:auto;color:${rev>=7?'var(--bb)':'var(--red)'}">
+      ${rev>=7?'● ACUSACIÓN DISPONIBLE':'○ ACUSACIÓN BLOQUEADA — '+rev+'/7 evidencias mínimas'}
+    </span>
+    <span id="sb-clock">${STATE.clock}</span>
+  </div>`;
+}
+
+window.openW=function(type,data){
+  data = data||{};
+  // Fusión: 'interrogate' ya no es una ventana aparte, vive dentro de 'suspect'.
+  if(type==='interrogate'){
+    if(data.id) STATE.suspect_states[data.id].showChat = true;
+    if(data.title) data.title = data.title.replace('INTERROGATORIO','EXPEDIENTE');
+    type='suspect';
+  }
+  // Evita abrir dos veces la ficha del mismo sospechoso; si estaba minimizada, la restaura
+  if(type==='suspect' && data.id){
+    const existing = STATE.windows.find(w=>w.type==='suspect'&&w.data.id===data.id);
+    if(existing){
+      if(existing.minimized) restoreWindow(existing.id);
+      else bringToFront(existing.id);
+      return;
+    }
+  }
+  // Default sizes per window type
+  const sizes = {
+    victim: [560,520], suspects: [420,500], evidence: [460,520],
+    cctv: [620,540], corkboard: [900,580], timeline: [620,500],
+    accusation: [560,480], suspect:[600,640],
+    ev_detail:[560,480]
+  };
+  const [w,h] = sizes[type] || [560,480];
+  openWindow(type, data||{}, w, h);
+};
+
+// ════════════════════════════════════════════════════════════════════
+// WINDOW RENDERER
+// ════════════════════════════════════════════════════════════════════
+function renderWindows(){
+  return STATE.windows.map(w=>renderOneWindow(w)).join('');
+}
+
+function renderOneWindow(w){
+  const body = getWindowBody(w);
+  const hiddenStyle = w.minimized ? 'display:none;' : '';
+  return `<div class="win" id="win-${w.id}" style="${hiddenStyle}left:${w.x}px;top:${w.y}px;width:${w.w}px;${w.h?'height:'+w.h+'px;':''}z-index:${w.z}" onclick="bringToFront('${w.id}')">
+    <div class="win-bar" onmousedown="startDrag(event,'${w.id}')">
+      <div class="win-bar-left"><div class="win-dot"></div><span>▸ ${w.data.title||w.type.toUpperCase()}</span></div>
+      <div style="display:flex;gap:4px">
+        <button class="win-min" title="Minimizar (sin cerrar)" onclick="event.stopPropagation();minimizeWindow('${w.id}')">─</button>
+        <button class="win-close" onclick="event.stopPropagation();closeWindow('${w.id}')">✕</button>
+      </div>
+    </div>
+    <div class="win-body">${body}</div>
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MINIMIZAR / RESTAURAR VENTANAS (sin cerrarlas)
+// ────────────────────────────────────────────────────────────────────
+window.minimizeWindow=function(id){
+  const w = STATE.windows.find(w=>w.id===id);
+  if(!w) return;
+  w.minimized = true;
+  SFX.click();
+  render();
+};
+window.restoreWindow=function(id){
+  const w = STATE.windows.find(w=>w.id===id);
+  if(!w) return;
+  w.minimized = false;
+  STATE.win_z++;
+  w.z = STATE.win_z;
+  SFX.click();
+  render();
+};
+function renderMinTray(){
+  const mins = STATE.windows.filter(w=>w.minimized);
+  if(mins.length===0) return '';
+  return `<div class="min-tray">
+    <span style="font-size:10px;color:var(--bd);letter-spacing:1.5px">MINIMIZADAS:</span>
+    ${mins.map(w=>`<div class="min-pill" onclick="restoreWindow('${w.id}')"><div class="win-dot"></div>${w.data.title||w.type.toUpperCase()}</div>`).join('')}
+  </div>`;
+}
+
+function getWindowBody(w){
+  switch(w.type){
+    case 'victim':     return renderVictim();
+    case 'suspects':   return renderSuspectsList();
+    case 'suspect':    return renderSuspectFile(w.data.id, w.id);
+    case 'interrogate':return renderSuspectFile(w.data.id, w.id);
+    case 'evidence':   return renderEvidenceList();
+    case 'ev_detail':  return renderEvidenceDetail(w.data.id, w.id);
+    case 'cctv':       return renderCCTV();
+    case 'corkboard':  return renderCorkboard(w.id);
+    case 'timeline':   return renderTimeline();
+    case 'accusation': return renderAccusation();
+    default: return '<div style="color:var(--bd);padding:20px">Ventana no reconocida.</div>';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// VICTIM WINDOW
+// ────────────────────────────────────────────────────────────────────
+function renderVictim(){
+  const v = CASE.victima;
+  return `<div>
+    <div style="display:flex;gap:14px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bdd)">
+      <div style="width:110px;flex-shrink:0">${suspectPortrait('gabriel', 110, 135)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="badge badge-red" style="margin-bottom:8px">☠ FALLECIDO</div>
+        <div style="font-family:var(--fo);font-size:14.5px;color:var(--amb);letter-spacing:1px;margin-bottom:4px">${v.nombre}</div>
+        <div style="font-size:12.5px;color:var(--bd);margin-bottom:2px">${v.cargo}</div>
+        <div style="font-size:12.5px;color:var(--red);margin-bottom:2px">${v.estado}</div>
+        <div style="font-size:12.5px;color:var(--bd)">Edad: ${v.edad} años</div>
+      </div>
+    </div>
+    <div style="font-size:10.5px;color:var(--bd);letter-spacing:1.5px;margin-bottom:5px">DESCRIPCIÓN:</div>
+    <div class="doc" style="font-size:13.5px;padding:10px;background:rgba(62,124,184,.03);border:1px solid var(--bdd)">${v.descripcion}</div>
+    <div style="margin-top:14px;padding:10px;background:rgba(201,162,39,.05);border:1px solid rgba(201,162,39,.2)">
+      <div style="font-size:10.5px;color:var(--amb);letter-spacing:1.5px;margin-bottom:5px">OBJETO DE INTERÉS CENTRAL:</div>
+      <div style="font-size:13.5px;color:var(--ice);line-height:1.7">Un <span style="color:var(--amb)">pendrive cifrado</span> que contiene pruebas de una red de corrupción interna en Nereus Quantum Systems. Gabriel planeaba entregarlo a una periodista esa noche. El pendrive <strong>no fue hallado</strong> en el cuerpo.</div>
+    </div>
+    <div style="margin-top:14px;text-align:center;padding:10px;background:rgba(0,0,0,.25);border:1px solid var(--bdd)">
+      ${assetImg(ASSETS.pendrive,'width:100%;max-width:340px;max-height:260px;object-fit:contain;','')}</div>
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SUSPECTS LIST
+// ────────────────────────────────────────────────────────────────────
+function renderSuspectsList(){
+  return `<div>
+    ${CASE.sospechosos.map(s=>{
+      const ss = STATE.suspect_states[s.id];
+      const bc = s.nivel_sospecha>80?'var(--red)':s.nivel_sospecha>65?'var(--amb)':'var(--bd)';
+      return `<div class="susp-card" onclick="event.stopPropagation();openW('suspect',{id:'${s.id}',title:'EXPEDIENTE · ${s.nombre.toUpperCase()}'})">
+        <div style="position:relative">
+          ${suspectPortrait(s.id, 64, 64)}
+        </div>
+        <div style="flex:1">
+          <div style="font-size:16px;color:var(--amb);margin-bottom:2px">${s.nombre}</div>
+          <div style="font-size:13px;color:var(--bd);margin-bottom:5px">${s.rol} · ${s.edad} años</div>
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="pbar" style="width:80px;height:3px"><div class="pfill" style="width:${s.nivel_sospecha}%;background:${bc};box-shadow:0 0 4px ${bc}"></div></div>
+            <span style="font-size:11.5px;color:${bc};font-family:var(--fo)">${s.nivel_sospecha}%</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+          ${s.clasificado?'<span class="badge badge-red">⚠ CLAVE</span>':''}
+          <div style="font-size:10.5px;color:var(--bd)">ESTRÉS: ${Math.round(ss.stress)}%</div>
+          <button class="btn" style="font-size:10.5px;padding:4px 8px" onclick="event.stopPropagation();STATE.suspect_states['${s.id}'].showChat=true;openW('suspect',{id:'${s.id}',title:'EXPEDIENTE · ${s.nombre.toUpperCase()}'})">🎙 INTERROGAR</button>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// SUSPECT FILE
+// ────────────────────────────────────────────────────────────────────
+function renderSuspectFile(id, winId){
+  const s = CASE.sospechosos.find(s=>s.id===id);
+  const ss = STATE.suspect_states[id];
+  if(!s) return '<div class="doc">Sospechoso no encontrado</div>';
+  const bc = s.nivel_sospecha>80?'var(--red)':s.nivel_sospecha>65?'var(--amb)':'var(--bd)';
+  const phaseColor = ss.phase==='cerrado'?'var(--bd)':ss.phase==='nervioso'?'var(--amb)':'var(--red)';
+  return `<div>
+    <div style="display:flex;gap:14px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--bdd)">
+      <div>${suspectPortrait(s.id, 110, 135)}</div>
+      <div style="flex:1">
+        <div style="font-family:var(--fo);font-size:14.5px;color:var(--amb);margin-bottom:3px">${s.nombre}</div>
+        <div style="font-size:12.5px;color:var(--bd);margin-bottom:2px">${s.rol} · ${s.edad} años</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+          ${s.clasificado?'<span class="badge badge-red">⚠ SOSPECHOSO CLAVE</span>':''}
+          <span class="badge badge-blue">ID: ${s.id.toUpperCase()}</span>
+        </div>
+        <div style="margin-bottom:4px;display:flex;align-items:center;gap:8px">
+          <span style="font-size:10.5px;color:var(--bd)">SOSPECHA:</span>
+          <div class="pbar" style="width:90px;height:4px"><div class="pfill" style="width:${s.nivel_sospecha}%;background:${bc}"></div></div>
+          <span style="font-size:12.5px;color:${bc};font-family:var(--fo)">${s.nivel_sospecha}%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:10.5px;color:var(--bd)">ESTRÉS:</span>
+          <div class="stress-bar" style="width:90px"><div class="stress-fill ${ss.stress<34?'stress-low':ss.stress<67?'stress-mid':'stress-high'}" style="width:${ss.stress}%"></div></div>
+          <span style="font-size:11.5px;color:${phaseColor};font-family:var(--fo)">${ss.phase.toUpperCase()} ${Math.round(ss.stress)}%</span>
+        </div>
+      </div>
+    </div>
+    ${[
+      {l:'MOTIVO',v:s.motivo,c:'var(--amb)'},
+      {l:'COARTADA',v:s.coartada,c:'var(--ice)'},
+      {l:'CONTRADICCIÓN DETECTADA',v:s.contradiccion,c:'var(--red)'},
+      {l:'PERFIL CONDUCTUAL',v:s.personalidad,c:'var(--bd)'},
+      ...(s.clasificado?[]:[{l:'SECRETO OCULTO',v:'███████ NIVEL CLASIFICADO ███████',c:'var(--bd)'}]),
+    ].map(f=>`<div style="margin-bottom:10px">
+      <div style="font-size:10px;color:var(--bdd);letter-spacing:2px;margin-bottom:3px">${f.l}:</div>
+      <div style="font-size:13.5px;color:${f.c};line-height:1.6;padding:7px 10px;background:rgba(62,124,184,.03);border:1px solid var(--bdd);border-left:2px solid ${f.c}">${f.v}</div>
+    </div>`).join('')}
+    ${ss.showChat ? `
+    <div style="margin-top:14px;border-top:1px solid var(--bdd);padding-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-family:var(--fo);font-size:12.5px;color:var(--bb);letter-spacing:2px">🎙 INTERROGATORIO EN CURSO</div>
+        <button class="btn" style="font-size:10.5px;padding:3px 8px" onclick="event.stopPropagation();toggleChat('${id}','${winId}')">▲ OCULTAR</button>
+      </div>
+      ${renderChatPanel(id, winId)}
+    </div>` : `
+    <div style="margin-top:10px">
+      <button class="btn" style="width:100%" onclick="event.stopPropagation();toggleChat('${id}','${winId}')">🎙 INICIAR INTERROGATORIO</button>
+    </div>`}
+    ${ss.contradictions.length>0?`<div style="margin-top:10px;padding:8px;background:rgba(178,58,63,.05);border:1px solid rgba(178,58,63,.2)">
+      <div style="font-size:10.5px;color:var(--red);margin-bottom:4px">CONTRADICCIONES DETECTADAS (${ss.contradictions.length}):</div>
+      ${ss.contradictions.map(c=>`<div style="font-size:12px;color:rgba(178,58,63,.8);margin:2px 0">• ${c}</div>`).join('')}
+    </div>`:''}
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// INTERROGATION WINDOW
+// ────────────────────────────────────────────────────────────────────
+window.toggleChat=function(id, winId){
+  const ss = STATE.suspect_states[id];
+  ss.showChat = !ss.showChat;
+  SFX.click();
+  const w = STATE.windows.find(w=>w.id===winId);
+  const panel = document.getElementById(`win-${winId}`);
+  if(panel && w) panel.querySelector('.win-body').innerHTML = getWindowBody(w);
+};
+
+function renderChatPanel(id, winId){
+  const s = CASE.sospechosos.find(s=>s.id===id);
+  const ss = STATE.suspect_states[id];
+  if(!s) return '';
+  const msgs = ss.chat.map(m=>`<div class="chat-bubble ${m.role==='user'?'player':m.role==='assistant_system'?'system':'suspect'}">${m.content.replace(/</g,'&lt;')}</div>`).join('');
+  const apiStatus = (SAMPLE_READY && !SAMPLE)
+    ? `<div class="chat-bubble system">⚠ INTERROGATORIO IA NO DISPONIBLE — abre el caso desde claude.ai para interrogar con IA</div>`
+    : '';
+  return `<div style="flex:1;display:flex;flex-direction:column;gap:8px">
+    <div style="padding:8px;background:rgba(62,124,184,.04);border:1px solid var(--bdd);font-size:11.5px;color:var(--bd);line-height:1.5">
+      💡 Presenta evidencias en tus preguntas y menciona lo que has descubierto: eso sube su estrés y lo acerca a NERVIOSO / REVELACIÓN. Algunas evidencias de la Sala de Evidencias están cerradas hasta que rompas a un sospechoso concreto — interrogar no es solo ambientación, es la llave. Cuidado: bajo presión, algunos sospechosos también intentan desviarte con datos ciertos pero irrelevantes, o medias verdades.
+    </div>
+    <div id="chat-msgs-${id}" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;min-height:180px;max-height:260px;border:1px solid var(--bdd);padding:10px;background:rgba(0,0,0,.3)">
+      ${apiStatus}
+      ${ss.chat.length===0?`<div class="chat-bubble system">Interrogatorio iniciado. El sospechoso te mira en silencio.</div>`:''}
+      ${msgs}
+      <div id="chat-typing-${id}" style="display:none"><div class="chat-bubble suspect" style="opacity:.6;animation:pulse 1s infinite">escribiendo...</div></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <textarea id="chat-input-${id}" class="chat-input" rows="2" placeholder="Escribe tu pregunta o presenta una evidencia..." onkeydown="handleChatKey(event,'${id}','${winId}')"></textarea>
+      <button class="btn" style="padding:8px 14px;white-space:nowrap;align-self:flex-end" onclick="sendChat('${id}','${winId}')">ENVIAR ▶</button>
+    </div>
+  </div>`;
+}
+
+// Se conserva por compatibilidad; ya no se usa como ventana propia (ver openW: 'interrogate' ahora redirige a 'suspect').
+function renderInterrogation(id, winId){
+  const s = CASE.sospechosos.find(s=>s.id===id);
+  const ss = STATE.suspect_states[id];
+  if(!s)return '<div>Sospechoso no encontrado</div>';
+  const phaseColor = ss.phase==='cerrado'?'var(--bd)':ss.phase==='nervioso'?'var(--amb)':'var(--red)';
+  const phaseLabel = ss.phase==='cerrado'?'CERRADO':ss.phase==='nervioso'?'NERVIOSO':'REVELACIÓN';
+  return `<div style="display:flex;gap:14px;height:100%">
+    <div style="width:140px;flex-shrink:0;border-right:1px solid var(--bdd);padding-right:12px">
+      ${suspectPortrait(s.id, 150, 185)}<br/>
+      <div style="font-size:12.5px;color:var(--amb);font-family:var(--fo);margin:6px 0 2px">${s.nombre.split(' ')[0].toUpperCase()}</div>
+      <div style="font-size:11px;color:var(--bd);margin-bottom:8px">${s.rol}</div>
+      <div style="font-size:10.5px;color:var(--bd);margin-bottom:2px">FASE:</div>
+      <div style="font-size:12.5px;color:${phaseColor};font-family:var(--fo);margin-bottom:6px">${phaseLabel}</div>
+      <div class="stress-bar" style="margin-bottom:4px"><div class="stress-fill ${ss.stress<34?'stress-low':ss.stress<67?'stress-mid':'stress-high'}" style="width:${ss.stress}%"></div></div>
+      <div style="font-size:10.5px;color:${phaseColor}">ESTRÉS: ${Math.round(ss.stress)}%</div>
+      ${ss.contradictions.length>0?`<div style="margin-top:8px;font-size:10.5px;color:var(--red)">CONTRADICCIONES: ${ss.contradictions.length}</div>`:''}
+      <div style="margin-top:10px;font-size:10.5px;color:var(--bd);line-height:1.5">${s.personalidad.split('.')[0]}.</div>
+    </div>
+    ${renderChatPanel(id, winId)}
+  </div>`;
+}
+
+window.handleChatKey=function(e,id,winId){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();window.sendChat(id,winId);}
+};
+
+window.sendChat=async function(id,winId){
+  const input = document.getElementById(`chat-input-${id}`);
+  if(!input)return;
+  const msg = input.value.trim();
+  if(!msg)return;
+  input.value='';
+  SFX.click();
+
+  const ss = STATE.suspect_states[id];
+  const msgs = document.getElementById(`chat-msgs-${id}`);
+  const typing = document.getElementById(`chat-typing-${id}`);
+
+  // Show user message
+  if(msgs){
+    msgs.innerHTML += `<div class="chat-bubble player">${msg.replace(/</g,'&lt;')}</div>`;
+    if(typing)typing.style.display='block';
+    msgs.scrollTop=msgs.scrollHeight;
+  }
+
+  const reply = await askClaude(id, msg);
+
+  if(msgs&&typing){
+    typing.style.display='none';
+    msgs.innerHTML += `<div class="chat-bubble suspect">${reply.replace(/</g,'&lt;')}</div>`;
+    msgs.scrollTop=msgs.scrollHeight;
+  }
+
+  // Re-render suspect phase indicator
+  const w = STATE.windows.find(w=>w.id===winId);
+  if(w){
+    const panel = document.getElementById(`win-${winId}`);
+    if(panel){
+      panel.querySelector('.win-body').innerHTML = getWindowBody(w);
+      attachInterrogationEvents(id, winId);
+    }
+  }
+
+  render();
+};
+
+function attachInterrogationEvents(id, winId){}
+
+// ────────────────────────────────────────────────────────────────────
+// EVIDENCE LIST
+// ────────────────────────────────────────────────────────────────────
+function renderEvidenceList(){
+  const rev = countRevealed();
+  return `<div>
+    <div class="pbar" style="margin-bottom:10px"><div class="pfill" style="width:${rev/STATE.evidencias.length*100}%"></div></div>
+    <div style="font-size:10.5px;color:var(--bd);margin-bottom:10px">EVIDENCIAS DESCIFRADAS: ${rev}/${STATE.evidencias.length}</div>
+    ${STATE.evidencias.map(ev=>{
+      const needsInterrogation = !ev.revelado && ev.lock_interrogatorio && !interrogatorioLockOk(ev);
+      return `<div class="ev-row ${ev.revelado?'':'locked'}" onclick="event.stopPropagation();openW('ev_detail',{id:'${ev.id}',title:'${ev.titulo}'})">
+      <span style="font-size:23px">${ev.icono}</span>
+      <div style="flex:1">
+        <div style="font-size:13.5px;color:${ev.revelado?'var(--ice)':'var(--amb)'}">${ev.titulo}</div>
+        <div style="font-size:11px;color:var(--bd)">${ev.tipo} ${ev.minijuego&&ev.minijuego!=='none'&&!ev.revelado&&!needsInterrogation?'· 🎮 '+ev.minijuego_label:''}</div>
+        ${needsInterrogation?`<div style="font-size:10.5px;color:var(--red);margin-top:2px">${interrogatorioLockLabel(ev)}</div>`:''}
+      </div>
+      <span class="badge ${ev.revelado?'badge-grn':'badge-red'}">${ev.revelado?'✓':'🔒'}</span>
+    </div>`;}).join('')}
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// EVIDENCE DETAIL + MINIGAMES
+// ────────────────────────────────────────────────────────────────────
+function renderEvidenceDetail(id, winId){
+  const ev = STATE.evidencias.find(e=>e.id===id);
+  if(!ev) return '<div class="doc">Evidencia no encontrada</div>';
+
+  return `<div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--bdd)">
+      <span style="font-size:31px">${ev.icono}</span>
+      <div style="flex:1">
+        <div style="font-family:var(--fo);font-size:13.5px;color:var(--amb)">${ev.titulo}</div>
+        <div style="font-size:11px;color:var(--bd)">TIPO: ${ev.tipo}</div>
+      </div>
+      <span class="badge ${ev.revelado?'badge-grn':'badge-red'}">${ev.revelado?'✓ DESCIFRADA':'🔒 CIFRADA'}</span>
+    </div>
+    <div style="font-size:10.5px;color:var(--bd);letter-spacing:1.5px;margin-bottom:5px">DESCRIPCIÓN VISIBLE:</div>
+    <div class="doc" style="padding:10px;background:rgba(62,124,184,.03);border:1px solid var(--bdd);margin-bottom:14px;font-size:13.5px">${ev.desc}</div>
+    ${ev.revelado
+      ? `<div style="font-size:10.5px;color:var(--grn);letter-spacing:1.5px;margin-bottom:5px">CONTENIDO DESCIFRADO:</div>
+         <div class="doc" style="padding:10px;background:rgba(78,158,116,.04);border:1px solid rgba(78,158,116,.25);color:var(--grn);animation:fadeIn .5s ease;font-size:13.5px">${ev.desc_rev}</div>
+         ${ev.video?`<div style="margin-top:12px">${renderVideoPlayer(ev.video,'CÁMARA DE SEGURIDAD')}</div>`:''}
+         ${ev.img&&!ev.minijuego?`<div style="margin-top:10px">${assetImg(ev.img,'width:100%;max-height:200px;object-fit:cover;','')}</div>`:''}
+        `
+      : `<div style="padding:16px;background:rgba(62,124,184,.04);border:1px solid var(--bdd);text-align:center">
+          <div style="font-family:var(--fo);font-size:12.5px;color:rgba(62,124,184,.3);letter-spacing:4px;margin-bottom:10px">████ CONTENIDO CIFRADO ████</div>
+          ${!interrogatorioLockOk(ev)
+            ? `<div style="font-size:11.5px;color:var(--red);margin-bottom:6px">🔒 ${interrogatorioLockLabel(ev)}</div>
+               <div style="font-size:11px;color:var(--bd);margin-bottom:10px">${ev.lock_interrogatorio.motivo}</div>
+               <button class="btn" disabled style="opacity:.4;cursor:not-allowed" title="Interroga primero al sospechoso indicado">🔒 ${ev.minijuego_label||'BLOQUEADO'}</button>`
+            : ev.minijuego&&ev.minijuego!=='none'
+              ? `<div style="font-size:11.5px;color:var(--bd);margin-bottom:10px">MINIJUEGO REQUERIDO: ${ev.minijuego_label}</div>
+                 <button class="btn" onclick="event.stopPropagation();launchMinigame('${id}','${winId}')">▶ ${ev.minijuego_label}</button>`
+              : `<div style="font-size:11.5px;color:var(--amb)">Desbloquea otras evidencias primero para acceder a esta.</div>`}
+        </div>`
+    }
+  </div>`;
+}
+
+window.launchMinigame=function(evId, winId){
+  const ev = STATE.evidencias.find(e=>e.id===evId);
+  if(!ev||ev.revelado)return;
+  if(!interrogatorioLockOk(ev))return;
+  SFX.open();
+  // Build minigame overlay
+  const mgDiv = document.createElement('div');
+  mgDiv.className='mg-overlay';
+  mgDiv.id='mg-active';
+  mgDiv.innerHTML = buildMinigameHTML(ev, evId, winId);
+  document.body.appendChild(mgDiv);
+  attachMinigameEvents(ev, evId, winId);
+};
+
+function closeMG(){
+  const mg=document.getElementById('mg-active');
+  if(mg)mg.remove();
+  if(window._mazeInterval){clearInterval(window._mazeInterval);window._mazeInterval=null;}
+  if(window._mazeKeyHandler){document.removeEventListener('keydown', window._mazeKeyHandler);window._mazeKeyHandler=null;}
+  if(window._dialMoveHandler){document.removeEventListener('mousemove', window._dialMoveHandler);window._dialMoveHandler=null;}
+  if(window._dialUpHandler){document.removeEventListener('mouseup', window._dialUpHandler);window._dialUpHandler=null;}
+}
+
+function successMG(evId, winId){
+  SFX.unlock();
+  closeMG();
+  revealEvidence(evId);
+  // Re-render the window that launched it
+  const w = STATE.windows.find(w=>w.id===winId);
+  if(w){
+    const panel=document.getElementById(`win-${winId}`);
+    if(panel) panel.querySelector('.win-body').innerHTML=getWindowBody(w);
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────
+// MINIGAME BUILDERS
+// ────────────────────────────────────────────────────────────────────
+function buildMinigameHTML(ev, evId, winId){
+  switch(ev.minijuego){
+    case 'video':     return buildVideoMG(ev);
+    case 'voz':       return buildVoiceMG(ev);
+    case 'logicgrid': return buildLogicGridMG(ev);
+    case 'dna':       return buildDNAMG();
+    case 'slide':     return buildSlideMG(ev);
+    case 'cifrado':   return buildCipherMG(ev);
+    case 'dial':      return buildDialMG(ev);
+    case 'timeline':  return buildTimelineMG();
+    case 'codigo':    return buildCodeMG(ev);
+    case 'laberinto': return buildMazeMG(ev);
+    default: return `<div class="mg-panel"><div style="color:var(--bd);text-align:center;padding:20px">Minijuego no disponible</div><button class="btn" onclick="closeMG()">CERRAR</button></div>`;
+  }
+}
+
+// MINIGAME: VIDEO PLAYER
+function buildVideoMG(ev){
+  const hasVid = ev.video && ev.video !== '';
+  return `<div class="mg-panel" style="max-width:620px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px">📹 ARCHIVO DE CÁMARA DE SEGURIDAD</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:14px">${ev.titulo}</div>
+    ${hasVid
+      ? `<div class="vid-container">
+          <video id="mg-video" src="${ev.video}" style="width:100%;display:block" controls></video>
+          <div class="vid-scanlines"></div>
+          <div class="vid-timestamp" id="vid-ts">00:00:00</div>
+          <div class="vid-label">SGOS · OCEANUS MAJESTY · CCTV</div>
+        </div>`
+      : `<div style="background:#000;border:1px solid var(--bd);padding:40px;text-align:center">
+          <div style="font-size:31px;margin-bottom:10px">📹</div>
+          <div style="color:var(--bd);font-size:11.5px;margin-bottom:6px">ARCHIVO DE VIDEO NO ENCONTRADO</div>
+          <div style="color:rgba(62,124,184,.4);font-size:10.5px">${ev.video}</div>
+          <div style="color:var(--amb);font-size:11.5px;margin-top:8px">Coloca el video en la carpeta assets/ con el nombre correcto para verlo aquí</div>
+        </div>`}
+    <div style="display:flex;gap:10px;margin-top:14px">
+      <button class="btn btn-grn" style="flex:1" id="mg-video-confirm">✓ ARCHIVO ANALIZADO — DESBLOQUEAR EVIDENCIA</button>
+      <button class="btn" onclick="closeMG()">CANCELAR</button>
+    </div>
+  </div>`;
+}
+
+// MINIGAME: DNA
+function buildDNAMG(){
+  const seqs = CASE.dna_sequences;
+  return `<div class="mg-panel" style="max-width:580px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px">🧬 ANALIZADOR DE ADN — SALA TÉCNICA B3</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:14px">Tres muestras pertenecen al técnico autorizado. Una es diferente. Identifica la muestra anómala.</div>
+    ${assetImg(ASSETS.adn_lab,'width:100%;max-height:100px;object-fit:cover;margin-bottom:12px;','')}
+    ${seqs.map((s,i)=>`<div class="dna-row" id="dna-row-${i}" onclick="selectDNA(${i})">
+      <div style="flex:0 0 200px;font-size:11.5px;color:var(--bd)">${s.label}</div>
+      <div style="display:flex;gap:2px;flex-wrap:wrap">${s.bases.split('').map(b=>`<div class="dna-base dna-${b}">${b}</div>`).join('')}</div>
+    </div>`).join('')}
+    <div id="dna-msg" style="text-align:center;font-size:12.5px;color:var(--bd);margin-top:10px">Haz clic en la secuencia que difiere</div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+// MINIGAME: PUZZLE (document pieces)
+// MINIGAME: SLIDE PUZZLE (8-PUZZLE REAL) — RECONSTRUCCIÓN DEL CONTRATO
+// Reemplaza al viejo "drag cualquier pieza a cualquier slot" (que mostraba la
+// misma imagen completa en cada pieza). Ahora es un rompecabezas deslizante
+// de verdad: cada celda muestra un recorte correcto de la imagen vía
+// background-position, solo se puede mover una pieza adyacente al hueco vacío,
+// y el shuffle se genera con movimientos válidos para garantizar que siempre
+// tenga solución.
+function buildSlideMG(ev){
+  const N = 3; // 3x3
+  const BLANK = 8;
+  if(!STATE.slide_tiles){
+    let tiles = [0,1,2,3,4,5,6,7,8];
+    let blankPos = 8;
+    // Shuffle mediante movimientos válidos (garantiza solubilidad)
+    for(let i=0;i<120;i++){
+      const r=blankPos%N, c=Math.floor(blankPos/N);
+      const opts=[];
+      if(r>0) opts.push(blankPos-1);
+      if(r<N-1) opts.push(blankPos+1);
+      if(c>0) opts.push(blankPos-N);
+      if(c<N-1) opts.push(blankPos+N);
+      const pick = opts[Math.floor(Math.random()*opts.length)];
+      [tiles[blankPos], tiles[pick]] = [tiles[pick], tiles[blankPos]];
+      blankPos = pick;
+    }
+    STATE.slide_tiles = tiles;
+  }
+
+  const cellPx = 84;
+  const cells = STATE.slide_tiles.map((val, idx)=>{
+    if(val===BLANK){
+      return `<div class="slide-cell slide-blank" data-idx="${idx}" style="width:${cellPx}px;height:${cellPx}px;"></div>`;
+    }
+    const col = val % N, row = Math.floor(val / N);
+    const bgPosX = (col/(N-1))*100;
+    const bgPosY = (row/(N-1))*100;
+    return `<div class="slide-cell" data-idx="${idx}" data-val="${val}" style="width:${cellPx}px;height:${cellPx}px;
+      background-image:url('${ev.img||''}');background-size:${N*100}% ${N*100}%;background-position:${bgPosX}% ${bgPosY}%;"></div>`;
+  }).join('');
+
+  return `<div class="mg-panel" style="max-width:420px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">📄 Reconstrucción del Contrato — Puzzle Deslizante</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:12px">
+      Haz clic en una pieza adyacente al espacio vacío para deslizarla. Reconstruye la imagen completa.
+    </div>
+    <div id="slide-grid" style="display:grid;grid-template-columns:repeat(${N},${cellPx}px);grid-template-rows:repeat(${N},${cellPx}px);gap:2px;margin:0 auto 12px;width:max-content;border:2px solid var(--bd);padding:2px;background:#000;">${cells}</div>
+    <div id="slide-msg" style="text-align:center;font-size:12.5px;color:var(--bd);"></div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+// MINIGAME: TIMELINE
+function buildTimelineMG(){
+  if(!STATE.tl_shuffled){
+    STATE.tl_shuffled=[...CASE.cronologia_items].sort(()=>Math.random()-.5);
+    STATE.tl_placed={};
+  }
+  const items = STATE.tl_shuffled;
+  return `<div class="mg-panel" style="max-width:540px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px">⏱️ RECONSTRUCCIÓN DE CRONOLOGÍA</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:14px">Ordena los eventos en el orden correcto según la investigación.</div>
+    <div id="tl-list" style="max-height:340px;overflow-y:auto">
+      ${items.map((item,i)=>`<div class="tl-item" id="tl-${item.id}" draggable="true"
+        ondragstart="tlDragStart(event,'${item.id}')"
+        ondragover="event.preventDefault()"
+        ondrop="tlDrop(event,'${item.id}')">
+        <span class="tl-hour">${item.hora}</span>
+        <span style="font-size:13px;color:var(--ice);flex:1">${item.evento}</span>
+        <span style="font-size:14.5px;opacity:.4">⠿</span>
+      </div>`).join('')}
+    </div>
+    <div id="tl-msg" style="text-align:center;font-size:12.5px;color:var(--bd);margin-top:10px">Arrastra los eventos para reordenarlos</div>
+    <div style="display:flex;gap:10px;margin-top:10px">
+      <button class="btn" onclick="checkTimeline()">✓ VERIFICAR ORDEN</button>
+      <button class="btn" onclick="closeMG()">CANCELAR</button>
+    </div>
+  </div>`;
+}
+
+// MINIGAME: CÓDIGO — PIN CRACKER ESTILO MASTERMIND
+// Código real: 1998 (primera nota del piano = 1, año de fundación de Nereus = últimos
+// tres dígitos, 998 → juntos reconstruyen el año completo: 1998).
+function buildCodeMG(ev){
+  STATE.code_secret = STATE.code_secret || '1998';
+  STATE.code_current = STATE.code_current || '';
+  STATE.code_guesses = STATE.code_guesses || [];
+  STATE.code_maxAttempts = 8;
+  const remaining = STATE.code_maxAttempts - STATE.code_guesses.length;
+  const guessRows = STATE.code_guesses.map(g=>`
+    <div class="code-guess-row">
+      <div class="code-guess-digits">${g.guess.split('').map(d=>`<span>${d}</span>`).join('')}</div>
+      <div class="code-guess-pegs">
+        ${Array(g.black).fill('<span class="peg peg-black"></span>').join('')}
+        ${Array(g.white).fill('<span class="peg peg-white"></span>').join('')}
+        ${Array(4-g.black-g.white).fill('<span class="peg peg-empty"></span>').join('')}
+      </div>
+    </div>`).join('');
+
+  return `<div class="mg-panel" style="max-width:460px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px">🔐 DESCIFRADOR DE PIN — PENDRIVE NEREUS</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:10px">
+      Pista de Gabriel: <em style="color:var(--amb)">"primera nota del Steinway más el año de fundación de Nereus"</em>.
+      Un piano comienza en la nota 1 de la escala. Nereus se fundó hace más tiempo del que Rodrigo admitiría.
+      Cada intento revela: <span class="peg peg-black" style="display:inline-block"></span> dígito correcto en su lugar,
+      <span class="peg peg-white" style="display:inline-block"></span> dígito correcto en lugar equivocado.
+    </div>
+    <div id="code-history" style="max-height:170px;overflow-y:auto;margin-bottom:10px">${guessRows}</div>
+    <div style="text-align:center;margin-bottom:8px">
+      <div id="code-display" class="code-display">${(STATE.code_current+'____').slice(0,4).split('').map((c,i)=> i<STATE.code_current.length?`<span>${c}</span>`:'<span class="empty">_</span>').join('')}</div>
+    </div>
+    <div class="code-keypad">
+      ${[1,2,3,4,5,6,7,8,9].map(n=>`<button class="code-key" data-n="${n}">${n}</button>`).join('')}
+      <button class="code-key" id="code-clear">⌫</button>
+      <button class="code-key" data-n="0">0</button>
+      <button class="code-key btn-grn" id="code-submit">✓</button>
+    </div>
+    <div id="code-msg" style="text-align:center;font-size:12.5px;color:var(--bd);margin-top:10px">Intentos restantes: ${remaining}</div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+// MINIGAME: LABERINTO — DUCTOS DE VENTILACIÓN
+function buildMazeMG(ev){
+  const rows = [
+    "#################",
+    "#S..............#",
+    "#.###########.#.#",
+    "#.#...........#.#",
+    "#.#.#########.#.#",
+    "#.#.#.......#.#.#",
+    "#.#.#.#####.#.#.#",
+    "#.#.#.#...#...#.#",
+    "#.#.#.#.#.#####.#",
+    "#...#.#.#.......#",
+    "#.###.#.#######.#",
+    "#.#...#.........#",
+    "#.#.#############",
+    "#.#.............#",
+    "#.###########.#.#",
+    "#...........#.#E#",
+    "#################",
+  ];
+  STATE.maze_grid = rows;
+  // Always reset player to start position when opening the maze
+  STATE.maze_player = {x:1,y:1};
+  // Reset guard state if this is a fresh open
+  if(!STATE.maze_guard){
+    STATE.maze_guard = null;
+    STATE.maze_guardMode = 'patrol';
+    STATE.maze_guardAlerted = false;
+    STATE.maze_waypoints = null;
+    STATE.maze_waypointIdx = 0;
+  }
+  STATE.maze_guard = STATE.maze_guard || {x:5,y:5};
+  STATE.maze_guardMode = STATE.maze_guardMode || 'patrol'; // 'patrol' | 'chase'
+  STATE.maze_caught = STATE.maze_caught || 0;
+  // Trampas ocultas: no se marcan visualmente hasta que se activan una vez.
+  // Trampas colocadas solo en rutas alternativas — el camino principal SIEMPRE es transitable
+  STATE.maze_traps = STATE.maze_traps || [
+    {x:14,y:1},{x:15,y:1},{x:15,y:2},{x:1,y:2},{x:1,y:3},{x:12,y:3},{x:13,y:14},
+  ];
+  STATE.maze_trapsTriggered = STATE.maze_trapsTriggered || [];
+
+  const cellHTML = rows.map((row,y)=>row.split('').map((c,x)=>{
+    let cls='maze-cell';
+    if(c==='#') cls+=' wall';
+    if(c==='E') cls+=' exit';
+    const wasTriggered = STATE.maze_trapsTriggered.some(t=>t.x===x&&t.y===y);
+    if(wasTriggered) cls+=' trap-known';
+    return `<div class="${cls}" data-x="${x}" data-y="${y}" id="mz-${x}-${y}"></div>`;
+  }).join('')).join('');
+
+  return `<div class="mg-panel" style="max-width:600px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">🗺️ Ductos de ventilación — Cubierta 7 → Sala Técnica B3</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:10px">
+      Usa las flechas del teclado para moverte. El guardia (<span style="color:var(--red)">■</span>) patrulla, pero si te
+      acercas demasiado <strong style="color:var(--red)">te detectará y te perseguirá activamente</strong> por el laberinto.
+      Hay trampas ocultas en el suelo: un paso en falso te manda de vuelta al inicio. Llega hasta la salida (<span style="color:var(--grn)">■</span>).
+    </div>
+    <div class="maze-grid" id="maze-grid" style="grid-template-columns:repeat(17,24px);grid-template-rows:repeat(17,24px)">${cellHTML}</div>
+    <div id="maze-msg" style="text-align:center;font-size:12.5px;color:var(--bd);margin-top:10px">Modo guardia: PATRULLANDO · Capturas: ${STATE.maze_caught}</div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+
+// MINIGAME: ANALIZADOR DE ESTRÉS VOCAL — AUDIO CCTV-07
+// El jugador escucha (visualmente) 5 segmentos de la grabación y debe encontrar
+// el segmento con el pico de estrés vocal anómalo (el forcejeo real).
+function buildVoiceMG(ev){
+  const segmentos = [
+    { id: 0, hora: "23:41:50", texto: "Voz 1 (hombre): \"Dame el pendrive, Gabriel.\"", pico: false },
+    { id: 1, hora: "23:41:58", texto: "Voz 2 (hombre): \"No vas a arruinarme, Rodrigo.\"", pico: false },
+    { id: 2, hora: "23:42:05", texto: "Forcejeo. Respiración agitada. Un grito breve.", pico: true },
+    { id: 3, hora: "23:42:12", texto: "Golpe metálico. Silencio absoluto.", pico: false },
+    { id: 4, hora: "23:42:20", texto: "Pasos alejándose rápidamente sobre metal mojado.", pico: false },
+  ];
+
+  function barsFor(seg) {
+    const bars = [];
+    for (let i = 0; i < 14; i++) {
+      let h;
+      if (seg.pico) {
+        h = 30 + Math.abs(Math.sin(i * 1.7 + seg.id)) * 65 + (i>4&&i<10 ? 20 : 0);
+      } else {
+        h = 15 + Math.abs(Math.sin(i * 0.9 + seg.id * 3)) * 30;
+      }
+      bars.push(Math.min(95, Math.round(h)));
+    }
+    return bars;
+  }
+
+  const segHTML = segmentos.map(seg => {
+    const bars = barsFor(seg).map(h => `<div style="width:5px;height:${h}%;background:var(--b);opacity:.75;border-radius:1px;"></div>`).join('');
+    return `
+      <div class="voice-segment" data-id="${seg.id}">
+        <div style="font-family:var(--fn);font-size:11.5px;color:var(--bd);margin-bottom:4px;">${seg.hora}</div>
+        <div style="display:flex;align-items:flex-end;gap:2px;height:60px;background:#000;border:1px solid var(--bdd);border-radius:4px;padding:4px 6px;">${bars}</div>
+        <div style="font-size:12px;color:var(--ice);margin-top:5px;line-height:1.4;">${seg.texto}</div>
+      </div>
+    `;
+  }).join('');
+
+  return `<div class="mg-panel" style="max-width:560px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">🎙️ Analizador de Estrés Vocal — CCTV-07</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:10px">
+      Estos son los 5 segmentos de audio recuperados. Haz clic en el segmento donde detectes
+      el pico de estrés vocal correspondiente al forcejeo real.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">${segHTML}</div>
+    <div id="voice-result" style="margin-top:10px"></div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+// MINIGAME: LOGIC GRID — DEDUCCIÓN DEL ORIGEN DE LA LLAMADA
+function buildLogicGridMG(ev){
+  const candidatos = [
+    { id: 'valeria', nombre: 'Valeria Suárez' },
+    { id: 'capitan', nombre: 'Capitán Andrés Molina' },
+    { id: 'lucia', nombre: 'Dra. Lucía Ferrer' },
+    { id: 'sofia', nombre: 'Sofía Duarte' },
+    { id: 'rodrigo', nombre: 'Rodrigo Salvatierra' },
+  ];
+  const pistas = [
+    "Valeria Suárez estaba escribiendo en su portátil sin interrupciones hasta las 23:47.",
+    "El Capitán Andrés Molina firmó personalmente la bitácora del puente a las 23:44.",
+    "La Dra. Lucía Ferrer atendía una emergencia en la enfermería, confirmada por un paciente, a esa misma hora.",
+    "Sofía Duarte salió del casino recién a las 23:50, seis minutos después de la llamada.",
+    "Diego Herrera fue quien RECIBIÓ la llamada — no pudo haberla hecho él mismo.",
+  ];
+
+  STATE.logic_marks = STATE.logic_marks || {};
+
+  const filas = candidatos.map(c => {
+    const estado = STATE.logic_marks[c.id] || '';
+    const simbolo = estado === 'check' ? '✓' : estado === 'cross' ? '✗' : '';
+    const color = estado === 'check' ? 'var(--grn)' : estado === 'cross' ? 'var(--red)' : 'var(--bd)';
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--bdd);">
+        <span style="font-size:14px;color:var(--ice);">${c.nombre}</span>
+        <button class="logic-cell" data-id="${c.id}" style="width:28px;height:28px;border:1px solid var(--bd);border-radius:4px;background:var(--bg3);color:${color};font-weight:700;cursor:pointer;">${simbolo}</button>
+      </div>
+    `;
+  }).join('');
+
+  const opciones = candidatos.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+
+  return `<div class="mg-panel" style="max-width:520px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">🧠 Deducción — Origen de la Llamada de las 23:44</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:10px;line-height:1.6;">
+      Pistas recopiladas:<br>
+      ${pistas.map((p,i)=>`${i+1}. ${p}`).join('<br>')}
+    </div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:6px;">Marca cada sospechoso con ✓ (coartada confirmada) o ✗ (sin coartada) haciendo clic:</div>
+    <div style="border:1px solid var(--bdd);border-radius:6px;overflow:hidden;margin-bottom:12px;">${filas}</div>
+    <label style="font-size:11.5px;color:var(--bd);letter-spacing:1px;">¿Quién usó la línea sin registro (Cabina 2064) para llamar a Diego Herrera?</label>
+    <select id="logic-answer" style="width:100%;background:var(--bg3);border:1px solid var(--bd);color:var(--ice);padding:8px;margin:6px 0;">
+      <option value="">-- Selecciona un sospechoso --</option>
+      ${opciones}
+    </select>
+    <button class="btn btn-grn" id="logic-submit">CONFIRMAR DEDUCCIÓN</button>
+    <div id="logic-result" style="margin-top:10px"></div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+// MINIGAME: CIFRADO POR SUSTITUCIÓN (CÉSAR)
+function buildCipherMG(ev){
+  const CIPHER_TEXT = "RTTVJF EF RLKFIZQRUF GLVIKR DREKVEZDZVEKF S3 KRIAVKR CLTZR WVIIVI 23 51";
+  STATE.cipher_shift = STATE.cipher_shift===undefined ? 0 : STATE.cipher_shift;
+  STATE.cipher_target = 17;
+
+  function decode(text, shift) {
+    return text.split('').map(ch => {
+      if (/[A-Z]/.test(ch)) {
+        const code = ((ch.charCodeAt(0) - 65 - shift) % 26 + 26) % 26;
+        return String.fromCharCode(code + 65);
+      }
+      return ch;
+    }).join('');
+  }
+
+  const preview = decode(CIPHER_TEXT, STATE.cipher_shift);
+
+  return `<div class="mg-panel" style="max-width:560px">
+    <div style="font-family:var(--fo);font-size:13.5px;color:var(--bb);letter-spacing:2px;margin-bottom:6px;text-transform:uppercase">🔡 Registro Cifrado de Accesos</div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:10px">
+      El sistema de seguridad cifró el registro con un desplazamiento alfabético (cifrado César).
+      Ajusta el desplazamiento hasta que el texto tenga sentido.
+    </div>
+    <div style="font-family:var(--fn);font-size:13.5px;color:var(--bd);background:#000;border:1px solid var(--bdd);border-radius:4px;padding:10px;margin-bottom:10px;word-break:break-all;">
+      ${CIPHER_TEXT}
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:10px;">
+      <button class="btn" id="cipher-minus">◀</button>
+      <div style="font-family:var(--fo);font-size:19px;color:var(--bb);min-width:40px;text-align:center;">${STATE.cipher_shift}</div>
+      <button class="btn" id="cipher-plus">▶</button>
+    </div>
+    <div id="cipher-preview" style="font-family:var(--fn);font-size:13.5px;color:var(--grn);background:#000;border:1px solid var(--bdd);border-radius:4px;padding:10px;margin-bottom:10px;word-break:break-all;min-height:20px;">
+      ${preview}
+    </div>
+    <button class="btn btn-grn" id="cipher-confirm">CONFIRMAR DESCIFRADO</button>
+    <div id="cipher-result" style="margin-top:10px"></div>
+    <div style="margin-top:10px"><button class="btn" onclick="closeMG()">CANCELAR</button></div>
+  </div>`;
+}
+
+// MINIGAME: RUEDA DE COMBINACIÓN — CAJA FUERTE DEL CAMAROTE 412
+function buildDialMG(ev){
+  // Caja fuerte simplificada: gira el dial, y cuando el número correcto quede
+  // bajo el marcador, pulsa "MARCAR NÚMERO". Sin dirección obligatoria, sin
+  // vueltas completas — solo girar y acertar el número, paso a paso.
+  STATE.dial_combo = STATE.dial_combo || [
+    { num: 25 },
+    { num: 60 },
+    { num: 5  },
+  ];
+  STATE.dial_step = STATE.dial_step === undefined ? 0 : STATE.dial_step;
+  STATE.dial_ringAngle = STATE.dial_ringAngle || 0;
+
+  const stops = [0,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95];
+  const R = 128, CX = 160, CY = 160;
+  const nodes = stops.map(n => {
+    const angle = (n / 100) * 2 * Math.PI - Math.PI / 2;
+    const x = CX + R * Math.cos(angle);
+    const y = CY + R * Math.sin(angle);
+    const major = (n % 25 === 0);
+    const size = major ? 40 : 32;
+    return `<div class="dial-node" style="position:absolute;left:${x-size/2}px;top:${y-size/2}px;width:${size}px;height:${size}px;border-radius:50%;border:1px solid var(--bd);background:var(--bg3);color:${major?'var(--bb)':'var(--ice)'};font-family:var(--fn);font-weight:${major?'700':'400'};font-size:${major?'14px':'12px'};display:flex;align-items:center;justify-content:center;">${n}</div>`;
+  }).join('');
+
+  const stepsInfo = STATE.dial_combo.map((s,i)=>{
+    const status = i<STATE.dial_step ? '✓' : i===STATE.dial_step ? '▶' : '·';
+    const color = i<STATE.dial_step ? 'var(--grn)' : i===STATE.dial_step ? 'var(--amb)' : 'var(--bd)';
+    return `<div style="font-size:13px;color:${color};margin-bottom:4px;">${status} Paso ${i+1}: marca el número <strong>${s.num}</strong></div>`;
+  }).join('');
+
+  const curStep = STATE.dial_combo[STATE.dial_step];
+
+  return `<div class="mg-panel" style="max-width:560px">
+    <div style="font-family:var(--fo);font-size:16px;color:var(--bb);letter-spacing:2px;margin-bottom:8px;text-transform:uppercase">🗝️ Caja Fuerte — Camarote 412</div>
+    <div style="font-size:13px;color:var(--bd);margin-bottom:10px">
+      Nota hallada junto a la caja: <strong style="color:var(--amb);">25 – 60 – 05</strong>.
+      Arrastra el dial con el mouse hasta que el número correcto quede bajo el marcador, y pulsa
+      <strong style="color:var(--bb);">MARCAR NÚMERO</strong>.
+    </div>
+    <div style="margin-bottom:10px;">${stepsInfo}</div>
+
+    <div id="dial-face" style="position:relative;width:320px;height:320px;margin:0 auto 14px;border:3px solid var(--bd);border-radius:50%;background:radial-gradient(circle, var(--bg3), #050A12);cursor:grab;user-select:none;box-shadow:0 0 30px rgba(0,0,0,.5), inset 0 0 25px rgba(0,0,0,.5);">
+      <div id="dial-ring" style="position:absolute;inset:0;transform:rotate(${STATE.dial_ringAngle}deg);">${nodes}</div>
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:14px;height:14px;border-radius:50%;background:var(--b);box-shadow:0 0 10px var(--b);pointer-events:none;"></div>
+      <div style="position:absolute;left:50%;top:-4px;transform:translateX(-50%);width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-top:16px solid var(--bb);pointer-events:none;filter:drop-shadow(0 0 4px rgba(0,0,0,.6));"></div>
+    </div>
+
+    <div id="dial-readout" style="text-align:center;font-family:var(--fo);font-size:34px;font-weight:700;color:var(--bb);margin-bottom:4px;letter-spacing:2px;">—</div>
+    <div style="text-align:center;font-size:12px;color:var(--bd);margin-bottom:10px;">Objetivo del paso actual: marca <strong style="color:var(--bb)">${curStep.num}</strong></div>
+
+    <div id="dial-result" style="text-align:center;min-height:18px;margin-bottom:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+      <button class="btn btn-grn" id="dial-confirm-btn">MARCAR NÚMERO</button>
+      <button class="btn" onclick="closeMG()">CANCELAR</button>
+    </div>
+  </div>`;
+}
+
+
+
+
+
+function attachMinigameEvents(ev, evId, winId){
+  _currentMGEvId=evId;_currentMGWinId=winId;
+  setTimeout(()=>{
+    // Video confirm
+    const vbtn=document.getElementById('mg-video-confirm');
+    if(vbtn)vbtn.onclick=()=>successMG(evId,winId);
+
+    // Brightness
+    if(ev.minijuego==='brightness'){
+      window.updateImgFilter=function(){
+        const b=document.getElementById('sl-bright'),c=document.getElementById('sl-contrast'),s=document.getElementById('sl-sharp');
+        if(!b)return;
+        const bv=parseInt(b.value),cv=parseInt(c.value),sv=parseInt(s.value);
+        document.getElementById('val-bright').textContent=bv;
+        document.getElementById('val-contrast').textContent=cv;
+        document.getElementById('val-sharp').textContent=sv;
+        const img=document.querySelector('#mg-active .asset-img');
+        if(img) img.style.filter=`brightness(${bv/100*2}) contrast(${cv/100*2}) blur(${Math.max(0,(100-sv)/100)*1.5}px)`;
+        // Check if close to target (65,75,55)
+        const dist=Math.abs(bv-65)+Math.abs(cv-75)+Math.abs(sv-55);
+        const pct=Math.max(0,Math.round(100-dist*0.7));
+        document.getElementById('mg-bright-pct').textContent=`PRECISIÓN: ${pct}%`;
+        document.getElementById('mg-bright-pct').style.color=pct>80?'var(--grn)':pct>50?'var(--amb)':'var(--bd)';
+        const ok=pct>=80;
+        document.getElementById('mg-bright-ok').style.display=ok?'block':'none';
+        const btn=document.getElementById('mg-bright-btn');
+        if(btn){btn.style.display=ok?'block':'none';btn.onclick=()=>successMG(evId,winId);}
+        const ol=document.getElementById('mg-img-overlay');
+        if(ol)ol.style.display=pct>50?'none':'flex';
+      };
+    }
+
+    // Slide puzzle (8-puzzle real)
+    if(ev.minijuego==='slide'){
+      const N=3, BLANK=8;
+      function idxToRC(i){ return {r:Math.floor(i/N), c:i%N}; }
+      function adjacent(a,b){
+        const ra=idxToRC(a), rb=idxToRC(b);
+        return (ra.r===rb.r && Math.abs(ra.c-rb.c)===1) || (ra.c===rb.c && Math.abs(ra.r-rb.r)===1);
+      }
+      document.querySelectorAll('.slide-cell').forEach(cell=>{
+        cell.onclick=()=>{
+          const idx=Number(cell.dataset.idx);
+          const blankIdx=STATE.slide_tiles.indexOf(BLANK);
+          if(!adjacent(idx,blankIdx))return;
+          [STATE.slide_tiles[idx], STATE.slide_tiles[blankIdx]] = [STATE.slide_tiles[blankIdx], STATE.slide_tiles[idx]];
+          SFX.click();
+          const solved = STATE.slide_tiles.every((v,i)=>v===i);
+          if(solved){
+            SFX.correct();
+            const msg=document.getElementById('slide-msg');
+            if(msg)msg.innerHTML='<span style="color:var(--grn)">✓ DOCUMENTO RECONSTRUIDO</span>';
+            STATE.slide_tiles=null;
+            setTimeout(()=>successMG(evId,winId),800);
+            return;
+          }
+          const mg=document.getElementById('mg-active');
+          if(mg){mg.innerHTML=buildMinigameHTML(ev,evId,winId);attachMinigameEvents(ev,evId,winId);}
+        };
+      });
+    }
+
+    // Hidden objects
+    if(ev.minijuego==='hidden'){
+      const found=new Set();
+      const container=document.getElementById('ho-container');
+      if(container){
+        container.onclick=function(e){
+          const rect=container.getBoundingClientRect();
+          const px=((e.clientX-rect.left)/rect.width)*100;
+          const py=((e.clientY-rect.top)/rect.height)*100;
+          const obs=CASE.hidden_objects;
+          obs.forEach(ob=>{
+            if(found.has(ob.id))return;
+            if(px>=ob.x&&px<=ob.x+ob.w&&py>=ob.y&&py<=ob.y+ob.h){
+              found.add(ob.id);SFX.correct();
+              const mk=document.createElement('div');
+              mk.className='ho-marker';
+              mk.style.left=`${ob.x+ob.w/2}%`;mk.style.top=`${ob.y+ob.h/2}%`;
+              mk.title=ob.label;
+              document.getElementById('ho-hits').appendChild(mk);
+              document.getElementById('ho-count').textContent=`Encontrados: ${found.size}/${obs.length} — ${ob.emoji} ${ob.label}`;
+              if(found.size===obs.length){
+                document.getElementById('ho-msg').textContent='¡Todos los objetos encontrados!';
+                document.getElementById('ho-msg').style.color='var(--grn)';
+                const btn=document.getElementById('ho-confirm-btn');
+                if(btn){btn.style.display='block';btn.onclick=()=>successMG(evId,winId);}
+              }
+            }
+          });
+        };
+      }
+    }
+
+    // DNA
+    if(ev.minijuego==='dna'){
+      window.selectDNA=function(i){
+        const seq=CASE.dna_sequences[i];
+        const row=document.getElementById(`dna-row-${i}`);
+        if(!row||STATE.dna_answered)return;
+        if(seq.correct){
+          SFX.correct();
+          row.className='dna-row selected-correct';
+          document.getElementById('dna-msg').innerHTML='<span style="color:var(--grn)">✓ MUESTRA ANÓMALA IDENTIFICADA — COINCIDENCIA CON RODRIGO SALVATIERRA 98.7%</span>';
+          STATE.dna_answered=true;
+          setTimeout(()=>successMG(evId,winId),1200);
+        } else {
+          SFX.error();
+          row.className='dna-row selected-wrong';
+          document.getElementById('dna-msg').textContent='Incorrecto. Esta muestra pertenece al técnico autorizado.';
+          setTimeout(()=>{row.className='dna-row';},700);
+        }
+      };
+    }
+
+    // Call log select
+    if(ev.minijuego==='calllog'||ev.minijuego==='calllog2'){
+      const data=ev.isCallLog2?CASE.access_log:CASE.call_log;
+      window.selectCallRow=function(i, eid){
+        const row=data[i];
+        const el=document.getElementById(`cr-${i}`);
+        document.querySelectorAll('.call-row').forEach(r=>r.classList.remove('selected'));
+        if(el)el.classList.add('selected');
+        const isSusp=ev.isCallLog2?!row.autorizado:row.suspicious;
+        const msg=document.getElementById('cr-msg');
+        if(isSusp){
+          SFX.correct();
+          if(msg)msg.innerHTML=`<span style="color:var(--grn)">✓ ENTRADA SOSPECHOSA IDENTIFICADA</span>`;
+          setTimeout(()=>successMG(eid,winId),1000);
+        } else {
+          SFX.error();
+          if(msg)msg.innerHTML=`<span style="color:var(--red)">Esta entrada no presenta irregularidades. Sigue buscando.</span>`;
+        }
+      };
+    }
+
+    // Timeline
+    if(ev.minijuego==='timeline'){
+      window.checkTimeline=function(){
+        const items=document.querySelectorAll('.tl-item');
+        const ids=[...items].map(el=>el.id.replace('tl-',''));
+        const correct=CASE.cronologia_items.map(i=>i.id);
+        let ok=true;
+        ids.forEach((id,i)=>{if(id!==correct[i])ok=false;});
+        const msg=document.getElementById('tl-msg');
+        if(ok){
+          SFX.correct();
+          if(msg)msg.innerHTML='<span style="color:var(--grn)">✓ CRONOLOGÍA CORRECTA</span>';
+          items.forEach(el=>el.classList.add('correct'));
+          setTimeout(()=>successMG(evId,winId),1200);
+        } else {
+          SFX.error();
+          if(msg)msg.innerHTML='<span style="color:var(--red)">Hay eventos fuera de orden. Sigue ajustando.</span>';
+          items.forEach(el=>el.classList.add('wrong'));
+          setTimeout(()=>items.forEach(el=>el.classList.remove('wrong')),700);
+        }
+      };
+      let tlDrag=null;
+      window.tlDragStart=function(e,id){tlDrag=id;e.dataTransfer.setData('tlid',id);};
+      window.tlDrop=function(e,targetId){
+        e.preventDefault();
+        if(!tlDrag||tlDrag===targetId)return;
+        const list=document.getElementById('tl-list');
+        const dragEl=document.getElementById(`tl-${tlDrag}`);
+        const targetEl=document.getElementById(`tl-${targetId}`);
+        if(!dragEl||!targetEl||!list)return;
+        const kids=[...list.children];
+        const di=kids.indexOf(dragEl),ti=kids.indexOf(targetEl);
+        if(di<ti)list.insertBefore(dragEl,targetEl.nextSibling);
+        else list.insertBefore(dragEl,targetEl);
+        tlDrag=null;
+      };
+    }
+
+    // Código (PIN Mastermind)
+    if(ev.minijuego==='codigo'){
+      STATE.code_current = STATE.code_current || '';
+      STATE.code_guesses = STATE.code_guesses || [];
+
+      function refreshCodeDisplay(){
+        const disp=document.getElementById('code-display');
+        if(!disp)return;
+        disp.innerHTML=(STATE.code_current+'____').slice(0,4).split('').map((c,i)=>
+          i<STATE.code_current.length?`<span>${c}</span>`:'<span class="empty">_</span>').join('');
+      }
+
+      document.querySelectorAll('.code-key[data-n]').forEach(btn=>{
+        btn.onclick=()=>{
+          if(STATE.code_current.length>=4)return;
+          STATE.code_current += btn.dataset.n;
+          SFX.click();
+          refreshCodeDisplay();
+        };
+      });
+      const clearBtn=document.getElementById('code-clear');
+      if(clearBtn)clearBtn.onclick=()=>{
+        STATE.code_current = STATE.code_current.slice(0,-1);
+        refreshCodeDisplay();
+      };
+      const submitBtn=document.getElementById('code-submit');
+      if(submitBtn)submitBtn.onclick=()=>{
+        const msg=document.getElementById('code-msg');
+        if(STATE.code_current.length!==4){
+          if(msg)msg.innerHTML='<span style="color:var(--red)">Ingresa 4 dígitos.</span>';
+          return;
+        }
+        const secret=STATE.code_secret;
+        const guess=STATE.code_current;
+        // Cálculo estilo Mastermind (maneja dígitos repetidos correctamente)
+        const secretArr=secret.split(''), guessArr=guess.split('');
+        let black=0;
+        const secretLeft=[], guessLeft=[];
+        for(let i=0;i<4;i++){
+          if(guessArr[i]===secretArr[i])black++;
+          else{secretLeft.push(secretArr[i]);guessLeft.push(guessArr[i]);}
+        }
+        let white=0;
+        guessLeft.forEach(d=>{
+          const idx=secretLeft.indexOf(d);
+          if(idx>-1){white++;secretLeft.splice(idx,1);}
+        });
+        STATE.code_guesses.push({guess,black,white});
+        STATE.code_current='';
+
+        if(black===4){
+          SFX.correct();
+          if(msg)msg.innerHTML='<span style="color:var(--grn)">✓ PIN DESCIFRADO</span>';
+          setTimeout(()=>{STATE.code_guesses=[];STATE.code_current='';successMG(evId,winId);},1000);
+        } else if(STATE.code_guesses.length>=STATE.code_maxAttempts){
+          SFX.error();
+          if(msg)msg.innerHTML='<span style="color:var(--red)">Sin intentos restantes. Vuelve a intentarlo.</span>';
+          setTimeout(()=>{STATE.code_guesses=[];STATE.code_current='';closeMG();},1400);
+        } else {
+          SFX.error();
+          const remaining=STATE.code_maxAttempts-STATE.code_guesses.length;
+          if(msg)msg.innerHTML=`Intentos restantes: ${remaining}`;
+        }
+        // Re-render del panel completo para mostrar el historial actualizado
+        const mg=document.getElementById('mg-active');
+        if(mg){mg.innerHTML=buildMinigameHTML(ev,evId,winId);attachMinigameEvents(ev,evId,winId);}
+      };
+    }
+
+    // Laberinto (ductos de ventilación) — el guardia SIEMPRE se mueve con
+    // BFS real (tanto en patrulla como en persecución), así que es
+    // estructuralmente imposible que atraviese una pared: cada paso del
+    // guardia es una celda adyacente real calculada sobre el grid.
+    if(ev.minijuego==='laberinto'){
+      const grid = STATE.maze_grid;
+      const rows = grid.length, cols = grid[0].length;
+
+      function cellAt(x,y){ return grid[y] ? grid[y][x] : '#'; }
+      function isTrap(x,y){ return STATE.maze_traps.some(t=>t.x===x&&t.y===y); }
+      function neighborsOf(x,y){
+        const out=[];
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dx,dy])=>{
+          const nx=x+dx, ny=y+dy;
+          if(cellAt(nx,ny)!=='#') out.push({x:nx,y:ny});
+        });
+        return out;
+      }
+      // BFS real: usado tanto para perseguir al jugador como para patrullar
+      // entre puntos de referencia. Nunca devuelve un salto que no sea una
+      // celda adyacente transitable.
+      function bfsNextStep(from, to){
+        if(from.x===to.x && from.y===to.y) return null;
+        const key=(p)=>`${p.x},${p.y}`;
+        const visited = new Set([key(from)]);
+        const queue = [[from]];
+        while(queue.length){
+          const path = queue.shift();
+          const cur = path[path.length-1];
+          if(cur.x===to.x && cur.y===to.y) return path[1] || null;
+          for(const n of neighborsOf(cur.x,cur.y)){
+            const k=key(n);
+            if(!visited.has(k)){
+              visited.add(k);
+              queue.push([...path,n]);
+              if(n.x===to.x && n.y===to.y) return path[1] || n;
+            }
+          }
+        }
+        return null;
+      }
+
+      function paintMaze(){
+        for(let y=0;y<rows;y++){
+          for(let x=0;x<cols;x++){
+            const el=document.getElementById(`mz-${x}-${y}`);
+            if(!el)continue;
+            el.classList.remove('player','guard','guard-chase');
+            if(STATE.maze_guard.x===x && STATE.maze_guard.y===y){
+              el.classList.add(STATE.maze_guardMode==='chase' ? 'guard-chase' : 'guard');
+            }
+          }
+        }
+        const p=document.getElementById(`mz-${STATE.maze_player.x}-${STATE.maze_player.y}`);
+        if(p)p.classList.add('player');
+      }
+
+      function resetToStart(reason){
+        STATE.maze_player={x:1,y:1};
+        STATE.maze_guardMode='patrol';
+        const msg=document.getElementById('maze-msg');
+        if(msg)msg.innerHTML=`<span style="color:var(--red)">${reason} Vuelves al inicio.</span>`;
+      }
+
+      function tryMove(dx,dy){
+        const nx=STATE.maze_player.x+dx, ny=STATE.maze_player.y+dy;
+        if(cellAt(nx,ny)==='#')return;
+        STATE.maze_player={x:nx,y:ny};
+
+        if(isTrap(nx,ny)){
+          SFX.error();
+          STATE.maze_caught++;
+          if(!STATE.maze_trapsTriggered.some(t=>t.x===nx&&t.y===ny)) STATE.maze_trapsTriggered.push({x:nx,y:ny});
+          const el=document.getElementById(`mz-${nx}-${ny}`);
+          if(el) el.classList.add('trap-known');
+          resetToStart('¡Trampa activada!');
+          paintMaze();
+          return;
+        }
+        checkCapture();
+        if(cellAt(nx,ny)==='E'){
+          SFX.correct();
+          const msg=document.getElementById('maze-msg');
+          if(msg)msg.innerHTML='<span style="color:var(--grn)">✓ RUTA CONFIRMADA</span>';
+          document.removeEventListener('keydown', window._mazeKeyHandler);
+          if(window._mazeInterval){clearInterval(window._mazeInterval);window._mazeInterval=null;}
+          setTimeout(()=>successMG(evId,winId),900);
+          return;
+        }
+        paintMaze();
+      }
+
+      function checkCapture(){
+        if(STATE.maze_guard.x===STATE.maze_player.x && STATE.maze_guard.y===STATE.maze_player.y){
+          STATE.maze_caught++;
+          SFX.error();
+          resetToStart('¡El guardia te atrapó!');
+        }
+      }
+
+      // Puntos de referencia para la patrulla (todas celdas abiertas válidas).
+      // El guardia SIEMPRE viaja de uno a otro vía BFS, nunca en línea recta,
+      // así que jamás corta a través de una pared.
+      if(!STATE.maze_waypoints){
+        STATE.maze_waypoints = [{x:5,y:5},{x:11,y:5},{x:11,y:11},{x:5,y:11}];
+        STATE.maze_waypointIdx = 0;
+      }
+
+      function guardTick(){
+        const g=STATE.maze_guard, p=STATE.maze_player;
+        const dist=Math.abs(g.x-p.x)+Math.abs(g.y-p.y);
+        const msg=document.getElementById('maze-msg');
+
+        // Una vez detectado, el guardia NUNCA deja de perseguir.
+        if(STATE.maze_guardMode==='patrol' && dist<=5){
+          STATE.maze_guardMode='chase';
+          STATE.maze_guardAlerted = true;
+          SFX.error();
+        }
+
+        if(STATE.maze_guardMode==='chase'){
+          // Persecución: BFS directo hacia la posición actual del jugador.
+          const next=bfsNextStep(g, p);
+          if(next) STATE.maze_guard={x:next.x,y:next.y};
+          if(dist<=3){
+            // Impulso de velocidad cuando está muy cerca (recalcula BFS otra vez).
+            const g2=STATE.maze_guard;
+            const next2=bfsNextStep(g2, p);
+            if(next2) STATE.maze_guard={x:next2.x,y:next2.y};
+          }
+        } else {
+          // Patrulla: BFS hacia el waypoint actual. Al llegar, pasa al siguiente.
+          const target = STATE.maze_waypoints[STATE.maze_waypointIdx];
+          if(g.x===target.x && g.y===target.y){
+            STATE.maze_waypointIdx = (STATE.maze_waypointIdx+1) % STATE.maze_waypoints.length;
+          } else {
+            const next=bfsNextStep(g, target);
+            if(next) STATE.maze_guard={x:next.x,y:next.y};
+          }
+          const newDist=Math.abs(STATE.maze_guard.x-p.x)+Math.abs(STATE.maze_guard.y-p.y);
+          if(newDist<=5){
+            STATE.maze_guardMode='chase';
+            STATE.maze_guardAlerted=true;
+            SFX.error();
+          }
+        }
+
+        if(msg && document.getElementById('maze-grid')){
+          const modoTxt = STATE.maze_guardMode==='chase'
+            ? '<span style="color:var(--red)">⚠ ¡GUARDIA EN PERSECUCIÓN — NO PARA HASTA ATRAPARTE!</span>'
+            : 'Guardia: PATRULLANDO · Acércate y te detecta';
+          msg.innerHTML = modoTxt + ' · Capturas: '+STATE.maze_caught;
+        }
+        checkCapture();
+        paintMaze();
+      }
+
+      function keyHandler(e){
+        if(!document.getElementById('maze-grid'))return; // el panel ya se cerró
+        if(e.key==='ArrowUp'){tryMove(0,-1);e.preventDefault();}
+        else if(e.key==='ArrowDown'){tryMove(0,1);e.preventDefault();}
+        else if(e.key==='ArrowLeft'){tryMove(-1,0);e.preventDefault();}
+        else if(e.key==='ArrowRight'){tryMove(1,0);e.preventDefault();}
+      }
+      if(window._mazeKeyHandler) document.removeEventListener('keydown', window._mazeKeyHandler);
+      window._mazeKeyHandler = keyHandler;
+      document.addEventListener('keydown', keyHandler);
+
+      if(window._mazeInterval) clearInterval(window._mazeInterval);
+      window._mazeInterval = setInterval(()=>{
+        if(!document.getElementById('maze-grid')){
+          clearInterval(window._mazeInterval);window._mazeInterval=null;return;
+        }
+        guardTick();
+      }, 380);
+
+      paintMaze();
+    }
+
+    // Analizador de estrés vocal
+    if(ev.minijuego==='voz'){
+      document.querySelectorAll('.voice-segment').forEach(seg=>{
+        seg.style.cursor='pointer';
+        seg.onclick=()=>{
+          const id=Number(seg.dataset.id);
+          const resultEl=document.getElementById('voice-result');
+          if(id===2){
+            SFX.correct();
+            if(resultEl)resultEl.innerHTML='<div style="color:var(--grn);font-size:12.5px;">✓ PICO DE ESTRÉS VOCAL IDENTIFICADO — este es el momento del forcejeo real.</div>';
+            setTimeout(()=>successMG(evId,winId),900);
+          } else {
+            SFX.error();
+            seg.style.animation='shake .4s';
+            if(resultEl)resultEl.innerHTML='<div style="color:var(--red);font-size:12.5px;">Ese segmento no muestra un patrón anómalo. Sigue escuchando.</div>';
+            setTimeout(()=>{seg.style.animation='';},400);
+          }
+        };
+      });
+    }
+
+    // Logic Grid — deducción
+    if(ev.minijuego==='logicgrid'){
+      STATE.logic_marks = STATE.logic_marks || {};
+      document.querySelectorAll('.logic-cell').forEach(cell=>{
+        cell.onclick=()=>{
+          const id=cell.dataset.id;
+          const cur=STATE.logic_marks[id]||'';
+          const next = cur==='' ? 'check' : cur==='check' ? 'cross' : '';
+          STATE.logic_marks[id]=next;
+          SFX.click();
+          const mg=document.getElementById('mg-active');
+          if(mg){mg.innerHTML=buildMinigameHTML(ev,evId,winId);attachMinigameEvents(ev,evId,winId);}
+        };
+      });
+      const submitBtn=document.getElementById('logic-submit');
+      if(submitBtn)submitBtn.onclick=()=>{
+        const answer=document.getElementById('logic-answer').value;
+        const resultEl=document.getElementById('logic-result');
+        if(!answer){
+          if(resultEl)resultEl.innerHTML='<div style="color:var(--red);font-size:12.5px;">Selecciona un sospechoso antes de confirmar.</div>';
+          return;
+        }
+        if(answer==='rodrigo'){
+          SFX.correct();
+          if(resultEl)resultEl.innerHTML='<div style="color:var(--grn);font-size:12.5px;">✓ DEDUCCIÓN CORRECTA — Rodrigo Salvatierra es el único sin coartada confirmada a las 23:44.</div>';
+          STATE.logic_marks={};
+          setTimeout(()=>successMG(evId,winId),1000);
+        } else {
+          SFX.error();
+          if(resultEl)resultEl.innerHTML='<div style="color:var(--red);font-size:12.5px;">Esa deducción no encaja con las pistas. Revisa las coartadas otra vez.</div>';
+        }
+      };
+    }
+
+    // Cifrado por sustitución (César)
+    if(ev.minijuego==='cifrado'){
+      function decodeC(text, shift){
+        return text.split('').map(ch=>{
+          if(/[A-Z]/.test(ch)){
+            const code=((ch.charCodeAt(0)-65-shift)%26+26)%26;
+            return String.fromCharCode(code+65);
+          }
+          return ch;
+        }).join('');
+      }
+      function refreshCipher(){
+        const mg=document.getElementById('mg-active');
+        if(mg){mg.innerHTML=buildMinigameHTML(ev,evId,winId);attachMinigameEvents(ev,evId,winId);}
+      }
+      const minus=document.getElementById('cipher-minus');
+      const plus=document.getElementById('cipher-plus');
+      if(minus)minus.onclick=()=>{STATE.cipher_shift=(STATE.cipher_shift+25)%26;SFX.click();refreshCipher();};
+      if(plus)plus.onclick=()=>{STATE.cipher_shift=(STATE.cipher_shift+1)%26;SFX.click();refreshCipher();};
+      const confirmBtn=document.getElementById('cipher-confirm');
+      if(confirmBtn)confirmBtn.onclick=()=>{
+        const resultEl=document.getElementById('cipher-result');
+        if(STATE.cipher_shift===STATE.cipher_target){
+          SFX.correct();
+          if(resultEl)resultEl.innerHTML='<div style="color:var(--grn);font-size:12.5px;">✓ REGISTRO DESCIFRADO CORRECTAMENTE.</div>';
+          STATE.cipher_shift=0;
+          setTimeout(()=>successMG(evId,winId),900);
+        } else {
+          SFX.error();
+          if(resultEl)resultEl.innerHTML='<div style="color:var(--red);font-size:12.5px;">El texto todavía no tiene sentido. Sigue ajustando el desplazamiento.</div>';
+        }
+      };
+    }
+
+    // Rueda de combinación (caja fuerte) — versión simple: girar,
+    // dejar el número correcto bajo el marcador, pulsar "MARCAR NÚMERO".
+    if(ev.minijuego==='dial'){
+      const face=document.getElementById('dial-face');
+      const ring=document.getElementById('dial-ring');
+      const readout=document.getElementById('dial-readout');
+      const confirmBtn=document.getElementById('dial-confirm-btn');
+      if(face && ring){
+        function numberAtTop(ringAngleDeg){
+          // Convierte la rotación del dial en el número que queda bajo el
+          // marcador fijo (arriba). Redondea al múltiplo de 5 más cercano.
+          const a = (((-ringAngleDeg) % 360) + 360) % 360;
+          const raw = (a / 360) * 100;
+          const n = Math.round(raw / 5) * 5;
+          return ((n % 100) + 100) % 100;
+        }
+        function angleFromEvent(e){
+          const rect=face.getBoundingClientRect();
+          const cx=rect.left+rect.width/2, cy=rect.top+rect.height/2;
+          return Math.atan2(e.clientY-cy, e.clientX-cx) * 180/Math.PI;
+        }
+        function normDelta(diff){
+          while(diff>180) diff-=360;
+          while(diff<-180) diff+=360;
+          return diff;
+        }
+        function refreshReadout(){
+          readout.textContent = numberAtTop(STATE.dial_ringAngle);
+        }
+        refreshReadout();
+
+        let dragging=false, lastAngle=0;
+
+        face.onmousedown=(e)=>{
+          dragging=true;
+          lastAngle=angleFromEvent(e);
+          face.style.cursor='grabbing';
+          e.preventDefault();
+        };
+        function onMove(e){
+          if(!dragging)return;
+          const cur=angleFromEvent(e);
+          const delta=normDelta(cur-lastAngle);
+          lastAngle=cur;
+          STATE.dial_ringAngle+=delta;
+          ring.style.transform=`rotate(${STATE.dial_ringAngle}deg)`;
+          refreshReadout();
+        }
+        function onUp(){
+          if(!dragging)return;
+          dragging=false;
+          face.style.cursor='grab';
+        }
+        if(window._dialMoveHandler) document.removeEventListener('mousemove', window._dialMoveHandler);
+        if(window._dialUpHandler) document.removeEventListener('mouseup', window._dialUpHandler);
+        window._dialMoveHandler = onMove;
+        window._dialUpHandler = onUp;
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+
+        // Rueda del mouse: ajuste fino, un tick = 5° (para afinar el número exacto)
+        face.onwheel=(e)=>{
+          e.preventDefault();
+          const delta = e.deltaY>0 ? 5 : -5;
+          STATE.dial_ringAngle+=delta;
+          ring.style.transform=`rotate(${STATE.dial_ringAngle}deg)`;
+          refreshReadout();
+        };
+
+        function rerenderPanel(){
+          const mg=document.getElementById('mg-active');
+          if(mg){mg.innerHTML=buildMinigameHTML(ev,evId,winId);attachMinigameEvents(ev,evId,winId);}
+        }
+
+        if(confirmBtn) confirmBtn.onclick=()=>{
+          const step=STATE.dial_combo[STATE.dial_step];
+          const landed=numberAtTop(STATE.dial_ringAngle);
+          const resultEl=document.getElementById('dial-result');
+
+          // Tolerancia de ±2 (redondeo de mouse), comparación circular (0/95 son vecinos)
+          const numDiff = Math.min(
+            Math.abs(landed - step.num),
+            Math.abs(landed - step.num + 100),
+            Math.abs(landed - step.num - 100)
+          );
+
+          if(numDiff <= 2){
+            SFX.click();
+            STATE.dial_step++;
+            STATE.dial_ringAngle=0;
+            ring.style.transform=`rotate(0deg)`;
+            refreshReadout();
+            if(STATE.dial_step>=STATE.dial_combo.length){
+              SFX.correct();
+              if(resultEl)resultEl.innerHTML='<div style="color:var(--grn);font-size:13px;">✓ CAJA FUERTE ABIERTA.</div>';
+              STATE.dial_step=0;
+              setTimeout(()=>successMG(evId,winId),900);
+              return;
+            } else if(resultEl){
+              resultEl.innerHTML=`<div style="color:var(--grn);font-size:13px;">✓ Número marcado correctamente. El dial vuelve a cero — gira para el siguiente.</div>`;
+            }
+          } else {
+            // Sin castigo: no se reinicia el progreso, solo se avisa para que
+            // el jugador siga girando hasta el número correcto.
+            SFX.error();
+            if(resultEl)resultEl.innerHTML=`<div style="color:var(--red);font-size:13px;">Ese no es el número (marcaste ${landed}, necesitas ${step.num}). Sigue girando.</div>`;
+          }
+          rerenderPanel();
+        };
+      }
+    }
+
+  },100);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// CCTV WINDOW
+// ────────────────────────────────────────────────────────────────────
+function renderCCTV(){
+  const cams=[
+    {id:'c3', label:'CCTV-03 — PASILLO D7', video:ASSETS.video_pasillo, ts:'23:38'},
+    {id:'c7', label:'CCTV-07 — CUBIERTA 7', video:ASSETS.video_cubierta, ts:'23:42'},
+    {id:'c11',label:'CCTV-11 — SALA TÉCNICA B3', video:ASSETS.video_sala, ts:'00:03'},
+  ];
+  return `<div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:12px">Sistema de vigilancia del Oceanus Majesty — Acceso autorizado SGOS. ${cams.length} cámaras disponibles.</div>
+    ${cams.map(cam=>`<div style="margin-bottom:14px">
+      <div style="font-family:var(--fo);font-size:11.5px;color:var(--bd);letter-spacing:1px;margin-bottom:5px">▸ ${cam.label}</div>
+      ${renderVideoPlayer(cam.video, cam.ts)}
+    </div>`).join('')}
+    <div style="margin-top:10px;padding:10px;background:rgba(178,58,63,.05);border:1px solid rgba(178,58,63,.2);font-size:12px;color:var(--red)">
+      ⚠ NOTA: Segmentos de 23:41–23:49 han sido eliminados de CCTV-07 y CCTV-03. Acción deliberada sospechosa.
+    </div>
+  </div>`;
+}
+
+function renderVideoPlayer(src, ts){
+  return `<div class="vid-container">
+    <video src="${src}" style="width:100%;display:block;max-height:180px" controls onerror="this.parentNode.innerHTML=renderVideoFallback('${src}','${ts}')"></video>
+    <div class="vid-scanlines"></div>
+    <div class="vid-timestamp">${ts}</div>
+    <div class="vid-label">SGOS · OCEANUS MAJESTY · CCTV</div>
+  </div>`;
+}
+window.renderVideoFallback=function(src,ts){
+  return `<div style="background:#000;padding:30px;text-align:center;min-height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center">
+    <div style="font-size:25px;margin-bottom:8px">📹</div>
+    <div style="color:var(--bd);font-size:10.5px;margin-bottom:4px">ARCHIVO NO ENCONTRADO</div>
+    <div style="color:rgba(62,124,184,.35);font-size:10px">${src.split('/').pop()}</div>
+    <div style="color:var(--amb);font-size:10.5px;margin-top:6px">Coloca el video en assets/</div>
+    <div class="vid-timestamp" style="position:static;margin-top:6px">${ts}</div>
+  </div>`;
+};
+
+// ────────────────────────────────────────────────────────────────────
+// CORKBOARD
+// ────────────────────────────────────────────────────────────────────
+function renderCorkboard(winId){
+  const cards = CASE.sospechosos.map(s=>({
+    id:s.id, label:s.nombre, sub:s.rol, x:s.x, y:s.y, nivel:s.nivel_sospecha
+  }));
+
+  return `<div style="height:100%;display:flex;flex-direction:column;gap:8px">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn ${STATE.cork_connect_mode?'btn-red':''}" onclick="toggleCorkConnect('${winId}')">${STATE.cork_connect_mode?'○ CANCELAR':'● TRAZAR HILO'}</button>
+      <button class="btn" onclick="clearCorkConnections('${winId}')">↺ BORRAR HILOS</button>
+      <span style="font-size:10.5px;color:var(--bd);margin-left:auto">${STATE.cork_connect_mode?(STATE.cork_from?'▸ Selecciona el segundo sospechoso':'▸ Clic en el primer sospechoso'):'▸ Arrastra tarjetas o usa trazar hilo'}</span>
+    </div>
+    <div class="corkboard" id="corkboard-${winId}" style="flex:1;min-height:340px;position:relative" onmousemove="corkMove(event,'${winId}')" onmouseup="corkUp()">
+      <svg style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1">
+        ${STATE.cork_connections.map(c=>{
+          const from=cards.find(ca=>ca.id===c.from);
+          const to=cards.find(ca=>ca.id===c.to);
+          if(!from||!to)return '';
+          return `<line x1="${from.x+55}" y1="${from.y+28}" x2="${to.x+55}" y2="${to.y+28}" stroke="var(--red)" stroke-width="1.5" opacity=".7" stroke-dasharray="6,3" style="filter:drop-shadow(0 0 3px var(--red))"/>`;
+        }).join('')}
+      </svg>
+      ${cards.map(card=>`<div class="cork-card ${STATE.cork_from===card.id?'from':''}" id="ck-${card.id}-${winId}"
+        style="left:${card.x}px;top:${card.y}px;z-index:2;width:120px"
+        onmousedown="corkDown(event,'${card.id}','${winId}')"
+        onclick="corkClick('${card.id}','${winId}')">
+        <div style="font-size:11px;color:var(--amb);font-family:var(--fo);margin-bottom:2px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${card.label.split(' ')[0]}</div>
+        <div style="font-size:10px;color:var(--bd);overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${card.sub.split('—')[0].trim()}</div>
+        <div class="pbar" style="margin-top:4px;height:3px"><div class="pfill" style="width:${card.nivel}%;background:${card.nivel>80?'var(--red)':card.nivel>65?'var(--amb)':'var(--bd)'}"></div></div>
+      </div>`).join('')}
+      <textarea id="cork-notes-${winId}" style="position:absolute;bottom:8px;right:8px;width:180px;height:90px;background:rgba(62,124,184,.05);border:1px solid rgba(62,124,184,.2);color:var(--ice);font-family:var(--fn);font-size:11.5px;resize:none;outline:none;padding:6px" placeholder="Notas de investigación...">${STATE.cork_notes}</textarea>
+    </div>
+  </div>`;
+}
+
+let corkDragging=null, corkDragOffset={x:0,y:0};
+window.corkDown=function(e,id,winId){
+  if(STATE.cork_connect_mode)return;
+  corkDragging={id,winId};
+  const card=CASE.sospechosos.find(s=>s.id===id);
+  corkDragOffset={x:e.clientX-card.x,y:e.clientY-card.y};
+  e.stopPropagation();e.preventDefault();
+};
+window.corkMove=function(e,winId){
+  if(!corkDragging||corkDragging.winId!==winId)return;
+  const board=document.getElementById(`corkboard-${winId}`);
+  if(!board)return;
+  const rect=board.getBoundingClientRect();
+  const card=CASE.sospechosos.find(s=>s.id===corkDragging.id);
+  if(!card)return;
+  card.x=Math.max(0,Math.min(rect.width-130,e.clientX-corkDragOffset.x));
+  card.y=Math.max(0,Math.min(rect.height-60,e.clientY-corkDragOffset.y));
+  const el=document.getElementById(`ck-${corkDragging.id}-${winId}`);
+  if(el){el.style.left=card.x+'px';el.style.top=card.y+'px';}
+};
+window.corkUp=function(){corkDragging=null;};
+window.corkClick=function(id,winId){
+  if(!STATE.cork_connect_mode)return;
+  if(!STATE.cork_from){STATE.cork_from=id;SFX.click();renderCorkInPlace(winId);return;}
+  if(STATE.cork_from===id){STATE.cork_from=null;renderCorkInPlace(winId);return;}
+  const exists=STATE.cork_connections.some(c=>(c.from===STATE.cork_from&&c.to===id)||(c.from===id&&c.to===STATE.cork_from));
+  if(!exists){SFX.unlock();STATE.cork_connections.push({from:STATE.cork_from,to:id});}
+  else{STATE.cork_connections=STATE.cork_connections.filter(c=>!((c.from===STATE.cork_from&&c.to===id)||(c.from===id&&c.to===STATE.cork_from)));}
+  STATE.cork_from=null;renderCorkInPlace(winId);
+};
+window.toggleCorkConnect=function(winId){STATE.cork_connect_mode=!STATE.cork_connect_mode;STATE.cork_from=null;renderCorkInPlace(winId);};
+window.clearCorkConnections=function(winId){SFX.error();STATE.cork_connections=[];STATE.cork_from=null;renderCorkInPlace(winId);};
+function renderCorkInPlace(winId){
+  const w=STATE.windows.find(w=>w.id.includes('corkboard'));
+  if(!w)return;
+  const panel=document.getElementById(`win-${w.id}`);
+  if(panel)panel.querySelector('.win-body').innerHTML=renderCorkboard(winId);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// TIMELINE (official)
+// ────────────────────────────────────────────────────────────────────
+function renderTimeline(){
+  const items=CASE.cronologia_items;
+  const cols={0:'var(--bd)',1:'var(--bd)',2:'var(--bd)',3:'var(--amb)',4:'var(--red)',5:'var(--amb)',6:'var(--amb)',7:'var(--red)',8:'var(--red)',9:'var(--bd)'};
+  return `<div>
+    <div style="font-size:11.5px;color:var(--bd);margin-bottom:12px">Cronología oficial del caso. Usa el minijuego de Evidencias para reconstruir el orden real.</div>
+    <div style="position:relative">
+      <div style="position:absolute;left:52px;top:0;bottom:0;width:1px;background:var(--bdd)"></div>
+      ${items.map((item,i)=>`<div style="display:flex;gap:12px;margin-bottom:10px;align-items:flex-start;animation:slideUp ${.1+i*.04}s ease both">
+        <div style="font-size:11.5px;color:var(--bd);font-family:var(--fo);min-width:44px;text-align:right;padding-top:3px">${item.hora}</div>
+        <div style="width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px;background:${cols[item.orden]||'var(--bd)'};z-index:1;box-shadow:0 0 5px ${cols[item.orden]||'var(--bd)'}"></div>
+        <div style="flex:1;padding:7px 10px;background:rgba(62,124,184,.03);border:1px solid var(--bdd);border-left:2px solid ${cols[item.orden]||'var(--bdd)'};font-size:13.5px;color:var(--ice);line-height:1.5">${item.evento}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
+// ────────────────────────────────────────────────────────────────────
+// ACCUSATION
+// ────────────────────────────────────────────────────────────────────
+let accState={susp:'',motivo:'',prueba:'',submitted:false,result:null};
+function renderAccusation(){
+  const rev=countRevealed();
+  const required=7;
+  const canAccuse=rev>=required;
+
+  if(!canAccuse) return `<div style="text-align:center;padding:24px">
+    <div style="font-size:35px;margin-bottom:12px">🔒</div>
+    <div style="font-family:var(--fo);font-size:14.5px;color:var(--red);margin-bottom:8px">ACUSACIÓN BLOQUEADA</div>
+    <div style="font-size:13.5px;color:var(--amb)">Necesitas descifrar al menos ${required} evidencias.</div>
+    <div style="margin-top:10px;font-size:12.5px;color:var(--bd)">Evidencias: <span style="color:var(--amb)">${rev}</span>/${STATE.evidencias.length}</div>
+  </div>`;
+
+  if(accState.submitted&&accState.result){
+    return `<div style="text-align:center;padding:20px">
+      <div style="font-size:39px;margin-bottom:12px">⚖️</div>
+      <div style="font-family:var(--fo);font-size:17px;color:var(--bb);letter-spacing:2px;margin-bottom:14px;text-shadow:0 0 20px var(--b)">CASO RESUELTO</div>
+      <div style="font-size:13.5px;color:var(--ice);line-height:1.85;text-align:left;padding:14px;background:rgba(62,124,184,.05);border:1px solid var(--bd);margin-bottom:14px">${CASE.acusacion.resolucion}</div>
+      <div style="font-size:13px;color:var(--amb);font-style:italic;margin-bottom:14px">${CASE.acusacion.cita}</div>
+      <div style="font-size:13.5px;color:var(--bd)">🎹 El pendrive fue encontrado en el piano del salón principal — tal como Gabriel lo había previsto.</div>
+    </div>`;
+  }
+  if(accState.submitted&&!accState.result){
+    return `<div style="text-align:center;padding:20px">
+      <div style="font-size:39px;margin-bottom:12px">❌</div>
+      <div style="font-family:var(--fo);font-size:16px;color:var(--red);letter-spacing:2px;margin-bottom:12px">ACUSACIÓN RECHAZADA</div>
+      <div style="font-size:13.5px;color:var(--amb);margin-bottom:14px">Tu teoría no sostiene todas las evidencias. Revisa las conexiones entre sospechosos.</div>
+      <button class="btn" onclick="resetAccusation()">↺ REINTENTAR</button>
+    </div>`;
+  }
+
+  const susps=CASE.sospechosos.map(s=>`<option value="${s.id}">${s.nombre} — ${s.rol}</option>`).join('');
+  const motivos=[
+    {v:'pendrive',l:'Recuperar el pendrive para encubrir el fraude'},
+    {v:'dinero',l:'Apropiarse del dinero desviado'},
+    {v:'venganza',l:'Venganza personal'},
+    {v:'chantaje',l:'Detener un chantaje'},
+    {v:'accidente',l:'Accidente durante una confrontación'},
+  ].map(m=>`<option value="${m.v}">${m.l}</option>`).join('');
+  const pruebas=[
+    {v:'adn',l:'ADN de Rodrigo en el pasador del frac de Gabriel'},
+    {v:'llamada',l:'Llamada de Rodrigo a Diego a las 23:44'},
+    {v:'camara',l:'Silueta en CCTV-03 compatible con Rodrigo'},
+    {v:'pendrive',l:'Pendrive encontrado en el piano'},
+    {v:'contrato',l:'Contrato falsificado por Sofía'},
+  ].map(p=>`<option value="${p.v}">${p.l}</option>`).join('');
+
+  return `<div>
+    <div style="padding:10px;background:rgba(62,124,184,.04);border:1px solid var(--bdd);font-size:12.5px;color:var(--bd);margin-bottom:14px;line-height:1.5">
+      Los tres campos deben ser correctos. Un error en cualquiera significa acusación fallida.
+    </div>
+    <div style="font-size:10.5px;color:var(--bd);letter-spacing:1.5px;margin-bottom:4px">SOSPECHOSO PRINCIPAL:</div>
+    <select class="acc-select" id="acc-susp" onchange="accState.susp=this.value"><option value="">— Seleccionar —</option>${susps}</select>
+    <div style="font-size:10.5px;color:var(--bd);letter-spacing:1.5px;margin-bottom:4px">MOTIVO PRINCIPAL:</div>
+    <select class="acc-select" id="acc-mot" onchange="accState.motivo=this.value"><option value="">— Seleccionar —</option>${motivos}</select>
+    <div style="font-size:10.5px;color:var(--bd);letter-spacing:1.5px;margin-bottom:4px">PRUEBA TÉCNICA CLAVE:</div>
+    <select class="acc-select" id="acc-prueba" onchange="accState.prueba=this.value"><option value="">— Seleccionar —</option>${pruebas}</select>
+    <button class="btn btn-red" style="width:100%;padding:12px;font-size:13.5px;letter-spacing:2px;margin-top:6px" onclick="submitAccusation()">▶ PRESENTAR ACUSACIÓN FORMAL</button>
+  </div>`;
+}
+window.submitAccusation=function(){
+  if(!accState.susp||!accState.motivo||!accState.prueba){SFX.error();return;}
+  SFX.unlock();
+  const {sospechoso_correcto,motivo_correcto,prueba_correcta}=CASE.acusacion;
+  accState.result=accState.susp===sospechoso_correcto&&accState.motivo===motivo_correcto&&accState.prueba===prueba_correcta;
+  accState.submitted=true;
+  const w=STATE.windows.find(w=>w.type==='accusation');
+  if(w){const panel=document.getElementById(`win-${w.id}`);if(panel)panel.querySelector('.win-body').innerHTML=renderAccusation();}
+};
+window.resetAccusation=function(){accState={susp:'',motivo:'',prueba:'',submitted:false,result:null};const w=STATE.windows.find(w=>w.type==='accusation');if(w){const panel=document.getElementById(`win-${w.id}`);if(panel)panel.querySelector('.win-body').innerHTML=renderAccusation();}};
+
+// ────────────────────────────────────────────────────────────────────
+// ATTACH EVENTS
+// ────────────────────────────────────────────────────────────────────
+function attachDesktopEvents(){
+  startClock();
+  bindAllWindowFocus();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// EXPOSE GLOBALS
+// ════════════════════════════════════════════════════════════════════
+window.closeWindow=closeWindow;
+window.bringToFront=bringToFront;
+window.organizeWindows=organizeWindows;
+window.startDrag=startDrag;
+window.closeMG=closeMG;
+window.updateImgFilter=function(){};
+window.puzzleDragStart=function(){};
+window.puzzleDrop=function(){};
+window.selectDNA=function(){};
+window.selectCallRow=function(){};
+window.checkTimeline=function(){};
+window.tlDragStart=function(){};
+window.tlDrop=function(){};
+
+// ════════════════════════════════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════════════════════════════════
+(function init(){
+  // Inject CSS
+  const style=document.createElement('style');
+  style.textContent=CSS;
+  document.head.appendChild(style);
+
+  // First render
+  render();
+  startBoot();
+})();
+</script>
+</body>
+</html>
