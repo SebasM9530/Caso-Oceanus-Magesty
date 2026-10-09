@@ -81,11 +81,9 @@ function suspectPortrait(id, w=90, h=110, extraStyle='') {
   return '<div style="width:'+w+'px;height:'+h+'px;overflow:hidden;border:1px solid var(--bd);flex-shrink:0;'+extraStyle+'"><img src="'+ASSETS.fichas+'" style="width:'+imgW+'px;height:'+imgH+'px;display:block;margin-left:'+offX+'px;margin-top:'+offY+'px;" alt="'+id+'"/></div>';
 }
 
-// Interrogatorio IA: usa la capacidad "sample" del Artifact (cuenta de Claude del jugador, sin API key en el código).
-let SAMPLE = null, SAMPLE_READY = false;
-if (window.claude && window.claude.use) {
-  window.claude.use('sample').then(fn=>{ SAMPLE = fn; SAMPLE_READY = true; try{render();}catch(e){} }).catch(()=>{ SAMPLE_READY = true; });
-} else { SAMPLE_READY = true; }
+// Interrogatorio IA: llama a /api/claude (función de Vercel). La API key vive en la
+// variable de entorno ANTHROPIC_API_KEY del proyecto en Vercel, no en este archivo.
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 
 // ════════════════════════════════════════════════════════════════════
 // CSS GLOBAL
@@ -1016,10 +1014,14 @@ async function askClaude(suspectId, userMessage){
   ];
 
   try {
-    if(!SAMPLE) throw {code:'unavailable', message:'Interrogatorio IA no disponible en esta vista'};
-    const turns = [{role:'user', content: systemPrompt + '\n\nA continuación empieza el interrogatorio. Responde siempre en el formato JSON indicado.'}, ...messages];
-    const result = await SAMPLE(turns, {cache:false, modelTier:'quick'});
-    const raw = (result.text||'').trim();
+    const res = await fetch('/api/claude',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 400, system: systemPrompt, messages })
+    });
+    if(!res.ok){ let e={}; try{ e=await res.json(); }catch(_){} throw new Error(e.error?.message||res.status); }
+    const data = await res.json();
+    const raw = (data.content[0].text||'').trim();
 
     // El sospechoso (la IA) devuelve JSON con su diálogo + su propia evaluación
     // de cuánto lo presionó esta pregunta (stress_delta) y si se contradijo.
@@ -1062,9 +1064,7 @@ async function askClaude(suspectId, userMessage){
 
     return reply;
   } catch(err){
-    console.error('Claude sample error:', err);
-    if(err && (err.code==='not_granted'||err.code==='sampling_disabled')) return '[INTERROGATORIO IA NO AUTORIZADO — permite que este Artifact use Claude para interrogar.]';
-    if(err && err.code==='rate_limited') return '[DEMASIADAS PREGUNTAS — espera un momento y vuelve a intentarlo.]';
+    console.error('Claude API error:', err);
     return `[ERROR DE CONEXIÓN: ${(err&&err.message)||err}]`;
   }
 }
@@ -1264,7 +1264,7 @@ function renderDesktop(){
   <div class="statusbar">
     <div class="sb-dot on"></div><span>SISTEMA ACTIVO</span>
     <div class="sb-dot"></div><span>OCEANUS MAJESTY</span>
-    <div class="sb-dot"></div><span>INTERROGATORIO IA: ${SAMPLE?'ACTIVO':(SAMPLE_READY?'NO DISPONIBLE':'CONECTANDO...')}</span>
+    <div class="sb-dot"></div><span>INTERROGATORIO IA: ACTIVO</span>
     <span style="margin-left:auto;color:${rev>=7?'var(--bb)':'var(--red)'}">
       ${rev>=7?'● ACUSACIÓN DISPONIBLE':'○ ACUSACIÓN BLOQUEADA — '+rev+'/7 evidencias mínimas'}
     </span>
@@ -1499,9 +1499,7 @@ function renderChatPanel(id, winId){
   const ss = STATE.suspect_states[id];
   if(!s) return '';
   const msgs = ss.chat.map(m=>`<div class="chat-bubble ${m.role==='user'?'player':m.role==='assistant_system'?'system':'suspect'}">${m.content.replace(/</g,'&lt;')}</div>`).join('');
-  const apiStatus = (SAMPLE_READY && !SAMPLE)
-    ? `<div class="chat-bubble system">⚠ INTERROGATORIO IA NO DISPONIBLE — abre el caso desde claude.ai para interrogar con IA</div>`
-    : '';
+  const apiStatus = '';
   return `<div style="flex:1;display:flex;flex-direction:column;gap:8px">
     <div style="padding:8px;background:rgba(62,124,184,.04);border:1px solid var(--bdd);font-size:11.5px;color:var(--bd);line-height:1.5">
       💡 Presenta evidencias en tus preguntas y menciona lo que has descubierto: eso sube su estrés y lo acerca a NERVIOSO / REVELACIÓN. Algunas evidencias de la Sala de Evidencias están cerradas hasta que rompas a un sospechoso concreto — interrogar no es solo ambientación, es la llave. Cuidado: bajo presión, algunos sospechosos también intentan desviarte con datos ciertos pero irrelevantes, o medias verdades.
